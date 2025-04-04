@@ -70,25 +70,31 @@ def fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, dim, typ
         return fused_embeddings
 
 class TrillNet(nn.Module):
-    def __init__(self, dim, num_heads = 2, window_size=2):
+    def __init__(self, dim, num_heads = 2, window_size=2, candidate_size=4):
         super(TrillNet, self).__init__()
         self.dim = dim
         self.gcn = nn.Linear(dim, dim)  # 线性变换
         self.relu = nn.ReLU()  # ReLU激活函数
 
         self.num_heads = num_heads
+        self.candidate_size = candidate_size
+
+        self.embedding = nn.Parameter(torch.randn(1, candidate_size, dim))
+
         self.MaskedMultiheadSelfAttention = MaskedMultiheadSelfAttention(2*dim, num_heads)
 
         self.WindowBasedCrossAttention = WindowBasedCrossAttention(2*dim, window_size)
 
         self.InformationAggregationLayer = InformationAggregationLayer(dim)
 
-    def forward(self, candidate_size, history, current_trajectory, E):
-        batch_size = E.shape[0]
-        A = get_graph(history, candidate_size, batch_size)  # 获取图的邻接矩阵
-        A = Mytransform(A, candidate_size, batch_size)  # 进行图的拉普拉斯变换
+
+    def forward(self, history, current_trajectory):
+        batch_size = history.shape[0]
+        E =self.embedding.expand(batch_size, -1, -1)
+        A = get_graph(history, self.candidate_size, batch_size)  # 获取图的邻接矩阵
+        A = Mytransform(A, self.candidate_size, batch_size)  # 进行图的拉普拉斯变换
         Eg = self.relu(self.gcn(A @ E))  # 应用线性层与激活函数
-        pos_embeddings = torch.cat((Eg,E),dim=-1)
+        pos_embeddings = torch.cat((Eg, E),dim=-1)
         temporal_embeddings = generate_temporal_embeddings(history.shape[2], 2*self.dim)
         fused_history_embeddings = fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, self.dim, 0)
         fused_current_embeddings = fuse_spatial_temporal(pos_embeddings, current_trajectory, temporal_embeddings, self.dim, 1)
@@ -119,38 +125,23 @@ class TrillNet(nn.Module):
         # print(f"History attention out shape: {wca_history_embeddings.shape}")
         # print(f"Current attention out shape: {wca_current_embeddings.shape}")
         # print("end==>")
-        return final_embeddings
+        return final_embeddings @ self.embedding.transpose(-2, -1)
 
 if __name__ == "__main__":    
     batch_size = 2  # 设置 batch_size 大于 1
     history_size = 2
-    seq_len = 4
+    seq_len = 5
     candidate_size = 4
     embed = 9
 
-    net = TrillNet(dim=embed)
+    net = TrillNet(dim=embed, candidate_size=candidate_size)
     
     # 模拟输入数据
-    history = torch.tensor(
-        [
-            [
-                [0, 1, 2, 3],
-                [1, 2, 3, 0]
-            ],
-            [
-                [0, 1, 2, 3],
-                [1, 2, 3, 0]
-            ]
-        ]
-    )  # 假设有两个批次，history 是一个形状为 [batch_size, seq_x, seq_y, 2] 的张量
-    current_trajectory = torch.tensor(
-        [
-            [2, 3, 0, 1],
-            [2, 3, 0, 1]
-        ]
-    )  # 假设有两个批次，history 是一个形状为 [batch_size, seq_x, seq_y, 2] 的张量
-    print(history.shape)
-    E = torch.randn(batch_size, candidate_size, embed)  # 输入的特征矩阵，形状为 [batch_size, candidate_size, dim]
-    final_embeddings = net(candidate_size, history, current_trajectory, E)  # 通过网络进行推理
-    print("final_embeddings:==================>")
-    print(final_embeddings.shape)
+    history =torch.randint(0, candidate_size, (batch_size, history_size, seq_len)) # 假设有两个批次，history 是一个形状为 [batch_size, history_size, seq_len] 的张量
+    print(history)
+    current_trajectory = torch.randint(0, candidate_size, (batch_size, seq_len)) # 假设有两个批次，current_trajectory 是一个形状为 [batch_size, seq_len] 的张量
+    print(current_trajectory)
+
+    p = net(history, current_trajectory)  # 通过网络进行推理
+    print("prob:==================>")
+    print(p.shape)

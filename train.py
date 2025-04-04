@@ -5,16 +5,15 @@ from torch.utils.data import Dataset, DataLoader
 from trill import TrillNet
 
 class TrajectoryDataset(Dataset):
-    def __init__(self, history, current_trajectory, E):
+    def __init__(self, history, current_trajectory):
         self.history = history
         self.current_trajectory = current_trajectory
-        self.E = E
 
     def __len__(self):
         return self.history.shape[0]  # batch_size
 
     def __getitem__(self, index):
-        return self.history[index], self.current_trajectory[index], self.E
+        return self.history[index], self.current_trajectory[index]
     
 if __name__ == "__main__":
     batch_size = 10  # 设置 batch_size 大于 1
@@ -24,7 +23,7 @@ if __name__ == "__main__":
     embed = 9
     Epoch = 200
 
-    net = TrillNet(dim=embed)
+    net = TrillNet(dim=embed, candidate_size=candidate_size)
     optimizer = optim.Adam(net.parameters(), lr=0.01)  # Adam优化器
     criterion = nn.CrossEntropyLoss()  # 交叉熵损失
     
@@ -42,14 +41,12 @@ if __name__ == "__main__":
     print(history)
     print(current_trajectory)
     
-    E = torch.randn(candidate_size, embed)  # 输入的特征矩阵，形状为 [1, candidate_size, dim]
-    dataset = TrajectoryDataset(history, current_trajectory, E)
+    dataset = TrajectoryDataset(history, current_trajectory)
     dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
     
     for epoch in range(Epoch):
-        for batch_history, batch_trajectory, batch_E in dataloader:
-            final_embeddings = net(candidate_size, batch_history, batch_trajectory, batch_E)  # 通过网络进行推理
-            p = torch.matmul(final_embeddings, batch_E.transpose(-2,-1))
+        for batch_history, batch_trajectory in dataloader:
+            p = net(batch_history, batch_trajectory)  # 通过网络进行推理
             
             train_loss = 0
             for batch in range(batch_history.shape[0]):
@@ -66,7 +63,4 @@ if __name__ == "__main__":
         print("==========================>")
 
     # 保存模型和E
-    torch.save({
-        'model_state_dict': net.state_dict(),
-        'E': E.squeeze(0),  # 将E从[1, candidate_size, dim]转为[candidate_size, dim]
-    }, 'trillnet_weights_and_E.pth')
+    torch.save(net.state_dict(), 'trillnet_weights_and_E.pth')
