@@ -24,7 +24,7 @@ if __name__ == "__main__":
     Epoch = 200
 
     net = TrillNet(dim=embed, candidate_size=candidate_size)
-    optimizer = optim.Adam(net.parameters(), lr=0.01)  # Adam优化器
+    optimizer = optim.Adam(net.parameters(), lr=1e-3)  # Adam优化器
     criterion = nn.CrossEntropyLoss()  # 交叉熵损失
     
     history = torch.randint(0, candidate_size, (batch_size, history_size, seq_len))
@@ -63,4 +63,4 @@ if __name__ == "__main__":
         print("==========================>")
 
     # 保存模型和E
-    torch.save(net.state_dict(), 'trillnet_weights_and_E.pth')
+    torch.save(net.state_dict(), 'trillnet_weights.pth')

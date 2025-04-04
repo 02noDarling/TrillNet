@@ -1,3 +1,3 @@
 .venv
 __pycache__
-trillnet_weights_and_E.pth
+trillnet_weights.pth
