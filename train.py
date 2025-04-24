@@ -7,9 +7,14 @@ from config import *
 from data2list import data2list
 import random
 import numpy as np
+import os
     
 if __name__ == "__main__":
     net = TrillNet(dim=EMBED_DIM, window_size=WINDOW_SIZE, candidate_size=CANDIDATE_SIZE)
+    if os.path.exists("trillnet_weights.pth"):
+        checkpoints = torch.load("trillnet_weights.pth", map_location=DEVICE)
+        net.load_state_dict(checkpoints)
+    net = net.to(DEVICE)
     optimizer = optim.Adam(net.parameters(), lr=1e-4)  # Adam优化器
     criterion = nn.CrossEntropyLoss()  # 交叉熵损失
     
@@ -30,22 +35,42 @@ if __name__ == "__main__":
                 for i in range(seq_len):
                     if current_trajectory[0][i] != CANDIDATE_SIZE:
                         label_list.append(i)
-                k = 10
+                k = 5
                 label_list = random.sample(label_list, k)
                 for item in label_list:
                     current_trajectory[0][item] = CANDIDATE_SIZE
 
+                history = history.to(DEVICE)
+                current_trajectory = current_trajectory.to(DEVICE)
                 p = net(history, current_trajectory)  # 通过网络进行推理
 
-                train_loss = 0
-                for batch in range(history.shape[0]):
-                    for item in label_list:
-                        prob = p[batch][item]
-                        target = label_current_trajectory[batch][item]
-                        target = torch.tensor(target)
-                        loss = criterion(prob, target)
-                        train_loss += loss
-                mean_loss = train_loss / len(label_list) 
+
+                batch_indices = torch.arange(p.shape[0], device=DEVICE).unsqueeze(1).expand(-1, len(label_list))
+                item_indices = torch.tensor(label_list, device=DEVICE).unsqueeze(0).expand(p.shape[0], -1)
+                
+                # 一次性提取所有概率
+                all_probs = p[batch_indices, item_indices]  # [batch_size, len(label_list)]
+                
+                # 一次性提取所有目标
+                all_targets = torch.tensor(label_current_trajectory, device=DEVICE)[batch_indices, item_indices]
+                
+                # 计算所有损失
+                all_probs = all_probs.squeeze(0)
+                all_targets = all_targets.squeeze(0)
+                all_losses = criterion(all_probs, all_targets)
+                # 计算平均损失
+                mean_loss = all_losses.mean()
+
+                # train_loss = 0
+                # for batch in range(history.shape[0]):
+                #     for item in label_list:
+                #         prob = p[batch][item]
+                #         target = label_current_trajectory[batch][item]
+                #         target = torch.tensor(target).to(DEVICE)
+                #         loss = criterion(prob, target)
+                #         train_loss += loss
+                # mean_loss = train_loss / len(label_list) 
+
                 optimizer.zero_grad()
                 mean_loss.backward()
                 optimizer.step()

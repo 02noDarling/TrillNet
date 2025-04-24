@@ -27,6 +27,20 @@ def data2list(dir_path):
         
         users_trajectories.append(user_trajectories)
     
+    # users_trajectories = []
+    # users = 100
+    # sum = 20
+    # for i in range(users):
+    #     user_trajectories = []
+    #     for j in range(20):
+    #         trajectory = []
+    #         for k in range(48):
+    #             if k<=16 or k>=40:
+    #                 trajectory.append(CANDIDATE_SIZE)
+    #             else:
+    #                 trajectory.append(k)
+    #         user_trajectories.append(trajectory)
+    #     users_trajectories.append(user_trajectories)
     return users_trajectories
 
 if __name__ == "__main__":

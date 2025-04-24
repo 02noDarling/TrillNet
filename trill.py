@@ -39,42 +39,129 @@ def Mytransform(A, candidate_size, batch_size):
     # 执行 D @ A @ D 操作
     return D @ A @ D  # 拉普拉斯矩阵变换
 
+# def generate_temporal_embeddings(max_time, embed_dim):
+#     d = embed_dim // 2  # 嵌入维度是 2d
+#     embeddings = []
+#     for t in range(max_time):
+#         e_t = torch.zeros(embed_dim)
+#         for k in range(d):
+#             denominator = 10000 ** (2 * k / embed_dim)
+#             e_t[2 * k] = torch.sin(torch.tensor(t / denominator))
+#             e_t[2 * k + 1] = torch.cos(torch.tensor(t / denominator))
+#         embeddings.append(e_t)
+#     return torch.stack(embeddings)
+
 def generate_temporal_embeddings(max_time, embed_dim):
-    d = embed_dim // 2  # 嵌入维度是 2d
-    embeddings = []
-    for t in range(max_time):
-        e_t = torch.zeros(embed_dim)
-        for k in range(d):
-            denominator = 10000 ** (2 * k / embed_dim)
-            e_t[2 * k] = torch.sin(torch.tensor(t / denominator))
-            e_t[2 * k + 1] = torch.cos(torch.tensor(t / denominator))
-        embeddings.append(e_t)
-    return torch.stack(embeddings)
+    # 创建时间序列 [0, 1, 2, ..., max_time-1]
+    t = torch.arange(0, max_time, dtype=torch.float)
+    
+    # 创建索引 [0, 2, 4, ..., embed_dim-2]
+    indices = torch.arange(0, embed_dim, 2, dtype=torch.float)
+    
+    # 计算分母 10000^(2k/d)
+    denominators = 10000 ** (indices / embed_dim)
+    
+    # 扩展维度以便广播 [max_time, d]
+    t = t.unsqueeze(1)  # [max_time, 1]
+    denominators = denominators.unsqueeze(0)  # [1, d]
+    
+    # 计算 t/denominator [max_time, d]
+    arguments = t / denominators
+    
+    # 计算正弦和余弦
+    embeddings = torch.zeros(max_time, embed_dim)
+    embeddings[:, 0::2] = torch.sin(arguments)  # 偶数位置
+    embeddings[:, 1::2] = torch.cos(arguments)  # 奇数位置
+    
+    return embeddings
+
+# def fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, dim, null_embedding, candidate_size, type):
+#     if type ==0:
+#         batch_size, history_size, seq_len = history.shape
+#         fused_embeddings = torch.zeros(batch_size, history_size, seq_len, 2*dim)
+#         for batch in range(batch_size):
+#             for i in range(history_size):
+#                 for j in range(seq_len):
+#                     if history[batch][i][j] == candidate_size:
+#                         fused_embeddings[batch][i][j] = null_embedding + temporal_embeddings[j]
+#                     else:
+#                         fused_embeddings[batch][i][j] = pos_embeddings[batch][history[batch][i][j]] + temporal_embeddings[j]
+        
+#         return fused_embeddings
+#     else:
+#         batch_size, seq_len = history.shape
+#         fused_embeddings = torch.zeros(batch_size, seq_len, 2*dim)
+#         for batch in range(batch_size):
+#             for i in range(seq_len):
+#                 if history[batch][i] == candidate_size:
+#                     fused_embeddings[batch][i] = null_embedding + temporal_embeddings[i]
+#                 else:
+#                     fused_embeddings[batch][i] = pos_embeddings[batch][history[batch][i]] + temporal_embeddings[i]
+        
+#         return fused_embeddings
 
 def fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, dim, null_embedding, candidate_size, type):
-    if type ==0:
+    if type == 0:
         batch_size, history_size, seq_len = history.shape
-        fused_embeddings = torch.zeros(batch_size, history_size, seq_len, 2*dim)
-        for batch in range(batch_size):
-            for i in range(history_size):
-                for j in range(seq_len):
-                    if history[batch][i][j] == candidate_size:
-                        fused_embeddings[batch][i][j] = null_embedding + temporal_embeddings[j]
-                    else:
-                        fused_embeddings[batch][i][j] = pos_embeddings[batch][history[batch][i][j]] + temporal_embeddings[j]
+        
+        # 创建索引掩码来区分是否为null_embedding
+        is_null = (history == candidate_size)
+        
+        # 创建结果tensor
+        fused_embeddings = torch.zeros(batch_size, history_size, seq_len, 2*dim, device=history.device)
+        
+        # 处理null embedding的情况
+        # 扩展temporal_embeddings以便广播 [seq_len, 2*dim] -> [1, 1, seq_len, 2*dim]
+        expanded_temporal = temporal_embeddings.unsqueeze(0).unsqueeze(0)
+        
+        # 对所有位置添加temporal embeddings (无论是否为null)
+        null_plus_temporal = null_embedding.unsqueeze(0).unsqueeze(0).unsqueeze(0) + expanded_temporal
+        
+        # 使用掩码选择应用null embedding的位置
+        null_mask = is_null.unsqueeze(-1).expand(-1, -1, -1, 2*dim)
+        
+        # 为非null位置准备embeddings
+        # 收集所有需要的位置embeddings
+        gathered_pos_embeddings = pos_embeddings[torch.arange(batch_size).unsqueeze(-1).unsqueeze(-1), 
+                                                history.clamp(0, candidate_size-1)]
+        
+        # 添加temporal embeddings
+        pos_plus_temporal = gathered_pos_embeddings + expanded_temporal
+        
+        # 使用掩码合并两种情况
+        fused_embeddings = torch.where(null_mask, null_plus_temporal, pos_plus_temporal)
         
         return fused_embeddings
     else:
         batch_size, seq_len = history.shape
-        fused_embeddings = torch.zeros(batch_size, seq_len, 2*dim)
-        for batch in range(batch_size):
-            for i in range(seq_len):
-                if history[batch][i] == candidate_size:
-                    fused_embeddings[batch][i] = null_embedding + temporal_embeddings[i]
-                else:
-                    fused_embeddings[batch][i] = pos_embeddings[batch][history[batch][i]] + temporal_embeddings[i]
+        
+        # 创建掩码
+        is_null = (history == candidate_size)
+        
+        # 创建结果tensor
+        fused_embeddings = torch.zeros(batch_size, seq_len, 2*dim, device=history.device)
+        
+        # 扩展temporal_embeddings [seq_len, 2*dim] -> [1, seq_len, 2*dim]
+        expanded_temporal = temporal_embeddings.unsqueeze(0)
+        
+        # null加上temporal的情况
+        null_plus_temporal = null_embedding.unsqueeze(0).unsqueeze(0) + expanded_temporal
+        
+        # 使用掩码选择应用null embedding的位置
+        null_mask = is_null.unsqueeze(-1).expand(-1, -1, 2*dim)
+        
+        # 收集所有需要的位置embeddings
+        gathered_pos_embeddings = pos_embeddings[torch.arange(batch_size).unsqueeze(-1), 
+                                               history.clamp(0, candidate_size-1)]
+        
+        # 添加temporal embeddings
+        pos_plus_temporal = gathered_pos_embeddings + expanded_temporal
+        
+        # 使用掩码合并两种情况
+        fused_embeddings = torch.where(null_mask, null_plus_temporal, pos_plus_temporal)
         
         return fused_embeddings
+    
 
 class TrillNet(nn.Module):
     def __init__(self, dim, num_heads = 2, window_size=2, candidate_size=4):
@@ -102,31 +189,52 @@ class TrillNet(nn.Module):
         E = self.embedding.expand(batch_size, -1, -1)
         A = get_graph(history, self.candidate_size, batch_size)  # 获取图的邻接矩阵
         A = Mytransform(A, self.candidate_size, batch_size)  # 进行图的拉普拉斯变换
+        A = A.to(DEVICE)
+        E = E.to(DEVICE)
         Eg = self.relu(self.gcn(A @ E))  # 应用线性层与激活函数
         pos_embeddings = torch.cat((Eg, E),dim=-1)
-        temporal_embeddings = generate_temporal_embeddings(history.shape[2], 2*self.dim)
+        temporal_embeddings = generate_temporal_embeddings(history.shape[2], 2*self.dim).to(DEVICE)
         fused_history_embeddings = fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, self.dim, self.null_embedding, self.candidate_size, 0)
         fused_current_embeddings = fuse_spatial_temporal(pos_embeddings, current_trajectory, temporal_embeddings, self.dim, self.null_embedding, self.candidate_size, 1)
 
          # 将 history 和 current 都转换为合适的形状 [batch_size * trajectory_size, seq_len, dim]
-        fused_history_embeddings = fused_history_embeddings.view(batch_size * history.shape[1], history.shape[2], -1)
-        fused_current_embeddings = fused_current_embeddings.view(batch_size, -1, self.dim * 2)
+        fused_history_embeddings = fused_history_embeddings.view(batch_size * history.shape[1], history.shape[2], -1).to(DEVICE)
+        fused_current_embeddings = fused_current_embeddings.view(batch_size, -1, self.dim * 2).to(DEVICE)
 
-        fused_history_embeddings_mask = torch.zeros(history.shape[0], history.shape[1], history.shape[2], history.shape[2])
-        for i in range(history.shape[0]):
-            for j in range(history.shape[1]):
-                for k in range(history.shape[2]):
-                    if history[i][j][k] == self.candidate_size:
-                        fused_history_embeddings_mask[i][j][:,k] = float('-inf')
+        def create_mask_optimized(history, candidate_size, device):
+            # 直接创建掩码矩阵
+            return torch.where(
+                (history == candidate_size).unsqueeze(2),  # 条件: [batch, history, 1, seq]
+                torch.full((history.shape[0], history.shape[1], history.shape[2], history.shape[2]), float('-inf'), device=device),  # 若为真
+                torch.zeros(history.shape[0], history.shape[1], history.shape[2], history.shape[2], device=device)  # 若为假
+            )
+        fused_history_embeddings_mask =create_mask_optimized(history, self.candidate_size, DEVICE)
+        
+        # fused_history_embeddings_mask = torch.zeros(history.shape[0], history.shape[1], history.shape[2], history.shape[2]).to(DEVICE)
+        # for i in range(history.shape[0]):
+        #     for j in range(history.shape[1]):
+        #         for k in range(history.shape[2]):
+        #             if history[i][j][k] == self.candidate_size:
+        #                 fused_history_embeddings_mask[i][j][:,k] = float('-inf')
+
         fused_history_embeddings_mask = fused_history_embeddings_mask.reshape(history.shape[0] * history.shape[1], history.shape[2], history.shape[2])
 
         mmsa_history_embeddings = self.MaskedMultiheadSelfAttention(fused_history_embeddings, fused_history_embeddings_mask)
 
-        fused_current_embeddings_mask = torch.zeros(current_trajectory.shape[0], current_trajectory.shape[1], current_trajectory.shape[1])
-        for i in range(current_trajectory.shape[0]):
-            for j in range(current_trajectory.shape[1]):
-                if current_trajectory[i][j] == self.candidate_size:
-                    fused_current_embeddings_mask[i][:,j] = float('-inf')
+        def create_current_mask_optimized(current_trajectory, candidate_size, device):
+            # 直接创建掩码矩阵
+            return torch.where(
+                (current_trajectory == candidate_size).unsqueeze(1),  # 条件: [batch, 1, seq]
+                torch.full((current_trajectory.shape[0], current_trajectory.shape[1], current_trajectory.shape[1]), float('-inf'), device=device),  # 若为真
+                torch.zeros(current_trajectory.shape[0], current_trajectory.shape[1], current_trajectory.shape[1], device=device)  # 若为假
+            )
+        fused_current_embeddings_mask = create_current_mask_optimized(current_trajectory, self.candidate_size, DEVICE)
+
+        # fused_current_embeddings_mask = torch.zeros(current_trajectory.shape[0], current_trajectory.shape[1], current_trajectory.shape[1]).to(DEVICE)
+        # for i in range(current_trajectory.shape[0]):
+        #     for j in range(current_trajectory.shape[1]):
+        #         if current_trajectory[i][j] == self.candidate_size:
+        #             fused_current_embeddings_mask[i][:,j] = float('-inf')
 
         mmsa_current_embeddings = self.MaskedMultiheadSelfAttention(fused_current_embeddings, fused_current_embeddings_mask)
         
