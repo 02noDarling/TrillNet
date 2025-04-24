@@ -42,7 +42,7 @@ class MaskedMultiheadSelfAttention(nn.Module):
 
         # 如果有掩码，应用掩码
         if mask is not None:
-            attention_scores = attention_scores * mask.unsqueeze(1)  # 掩码为0的位置相关性设为0
+            attention_scores = attention_scores + mask.unsqueeze(1)  # 掩码为0的位置相关性设为0
 
         # 缩放
         attention_scores = attention_scores / (self.head_dim ** 0.5)  # 缩放点积的结果

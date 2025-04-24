@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from config import *
 from MaskedMultiheadSelfAttention import MaskedMultiheadSelfAttention
 from WindowBasedCrossAttention import WindowBasedCrossAttention
 from InformationAggregationLayer import InformationAggregationLayer
@@ -9,11 +10,11 @@ def get_graph(history, candidate_size, batch_size):
     array = torch.zeros(batch_size, candidate_size, candidate_size)
     # _, seq_x, seq_y = history.shape  # 获取历史张量的形状
     # print(f"History shape: {history.shape}")
-    
+    # print(f"history_shape:{history.shape}")
     # 使用批量化操作构建邻接矩阵
     history_1 = history[:, :, :-1]  # 当前节点
     history_2 = history[:, :, 1:]   # 下一个节点
-    mask = history_1 != history_2  # 计算是否不相等
+    mask = (history_1 != history_2) & (history_1 != candidate_size) & (history_2 != candidate_size)
     # 通过广播将相邻节点不相等的部分置为1，累加到邻接矩阵
 
     for b in range(batch_size):
@@ -50,14 +51,17 @@ def generate_temporal_embeddings(max_time, embed_dim):
         embeddings.append(e_t)
     return torch.stack(embeddings)
 
-def fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, dim, type):
+def fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, dim, null_embedding, candidate_size, type):
     if type ==0:
         batch_size, history_size, seq_len = history.shape
         fused_embeddings = torch.zeros(batch_size, history_size, seq_len, 2*dim)
         for batch in range(batch_size):
             for i in range(history_size):
                 for j in range(seq_len):
-                    fused_embeddings[batch][i][j] = pos_embeddings[batch][history[batch][i][j]] + temporal_embeddings[j]
+                    if history[batch][i][j] == candidate_size:
+                        fused_embeddings[batch][i][j] = null_embedding + temporal_embeddings[j]
+                    else:
+                        fused_embeddings[batch][i][j] = pos_embeddings[batch][history[batch][i][j]] + temporal_embeddings[j]
         
         return fused_embeddings
     else:
@@ -65,7 +69,10 @@ def fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, dim, typ
         fused_embeddings = torch.zeros(batch_size, seq_len, 2*dim)
         for batch in range(batch_size):
             for i in range(seq_len):
-                fused_embeddings[batch][i] = pos_embeddings[batch][history[batch][i]] + temporal_embeddings[i]
+                if history[batch][i] == candidate_size:
+                    fused_embeddings[batch][i] = null_embedding + temporal_embeddings[i]
+                else:
+                    fused_embeddings[batch][i] = pos_embeddings[batch][history[batch][i]] + temporal_embeddings[i]
         
         return fused_embeddings
 
@@ -81,6 +88,8 @@ class TrillNet(nn.Module):
 
         self.embedding = nn.Parameter(torch.randn(1, candidate_size, dim))
 
+        self.null_embedding = nn.Parameter(torch.rand(2*dim))
+
         self.MaskedMultiheadSelfAttention = MaskedMultiheadSelfAttention(2*dim, num_heads)
 
         self.WindowBasedCrossAttention = WindowBasedCrossAttention(2*dim, window_size)
@@ -90,21 +99,36 @@ class TrillNet(nn.Module):
 
     def forward(self, history, current_trajectory):
         batch_size = history.shape[0]
-        E =self.embedding.expand(batch_size, -1, -1)
+        E = self.embedding.expand(batch_size, -1, -1)
         A = get_graph(history, self.candidate_size, batch_size)  # 获取图的邻接矩阵
         A = Mytransform(A, self.candidate_size, batch_size)  # 进行图的拉普拉斯变换
         Eg = self.relu(self.gcn(A @ E))  # 应用线性层与激活函数
         pos_embeddings = torch.cat((Eg, E),dim=-1)
         temporal_embeddings = generate_temporal_embeddings(history.shape[2], 2*self.dim)
-        fused_history_embeddings = fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, self.dim, 0)
-        fused_current_embeddings = fuse_spatial_temporal(pos_embeddings, current_trajectory, temporal_embeddings, self.dim, 1)
+        fused_history_embeddings = fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, self.dim, self.null_embedding, self.candidate_size, 0)
+        fused_current_embeddings = fuse_spatial_temporal(pos_embeddings, current_trajectory, temporal_embeddings, self.dim, self.null_embedding, self.candidate_size, 1)
 
          # 将 history 和 current 都转换为合适的形状 [batch_size * trajectory_size, seq_len, dim]
         fused_history_embeddings = fused_history_embeddings.view(batch_size * history.shape[1], history.shape[2], -1)
         fused_current_embeddings = fused_current_embeddings.view(batch_size, -1, self.dim * 2)
 
-        mmsa_history_embeddings = self.MaskedMultiheadSelfAttention(fused_history_embeddings)
-        mmsa_current_embeddings = self.MaskedMultiheadSelfAttention(fused_current_embeddings)
+        fused_history_embeddings_mask = torch.zeros(history.shape[0], history.shape[1], history.shape[2], history.shape[2])
+        for i in range(history.shape[0]):
+            for j in range(history.shape[1]):
+                for k in range(history.shape[2]):
+                    if history[i][j][k] == self.candidate_size:
+                        fused_history_embeddings_mask[i][j][:,k] = float('-inf')
+        fused_history_embeddings_mask = fused_history_embeddings_mask.reshape(history.shape[0] * history.shape[1], history.shape[2], history.shape[2])
+
+        mmsa_history_embeddings = self.MaskedMultiheadSelfAttention(fused_history_embeddings, fused_history_embeddings_mask)
+
+        fused_current_embeddings_mask = torch.zeros(current_trajectory.shape[0], current_trajectory.shape[1], current_trajectory.shape[1])
+        for i in range(current_trajectory.shape[0]):
+            for j in range(current_trajectory.shape[1]):
+                if current_trajectory[i][j] == self.candidate_size:
+                    fused_current_embeddings_mask[i][:,j] = float('-inf')
+
+        mmsa_current_embeddings = self.MaskedMultiheadSelfAttention(fused_current_embeddings, fused_current_embeddings_mask)
         
         # # 将历史轨迹的输出重新形状为原始形状 [batch_size, trajectory_size, seq_len, dim]
         # mmsa_history_embeddings = mmsa_history_embeddings.view(batch_size, history.shape[1], history.shape[2], 2*self.dim)
@@ -116,9 +140,7 @@ class TrillNet(nn.Module):
         wca_history_embeddings = self.WindowBasedCrossAttention(mmsa_history_embeddings, temp_current_embeddings)
         wca_history_embeddings = wca_history_embeddings.view(batch_size, history.shape[1], history.shape[2], 2*self.dim)
 
-        wca_current_embeddings = self.WindowBasedCrossAttention(mmsa_current_embeddings, mmsa_current_embeddings)
-
-        final_embeddings = self.InformationAggregationLayer(wca_history_embeddings, wca_current_embeddings)
+        final_embeddings = self.InformationAggregationLayer(wca_history_embeddings, mmsa_current_embeddings)
 
 
         # print("results:===================>")
@@ -128,19 +150,15 @@ class TrillNet(nn.Module):
         return final_embeddings @ self.embedding.transpose(-2, -1)
 
 if __name__ == "__main__":    
-    batch_size = 2  # 设置 batch_size 大于 1
-    history_size = 2
-    seq_len = 5
-    candidate_size = 4
-    embed = 9
 
-    net = TrillNet(dim=embed, candidate_size=candidate_size)
+    history_size = 10
+    net = TrillNet(dim=EMBED_DIM, num_heads=NHEAD, window_size=WINDOW_SIZE, candidate_size=CANDIDATE_SIZE)
     
     # 模拟输入数据
-    history =torch.randint(0, candidate_size, (batch_size, history_size, seq_len)) # 假设有两个批次，history 是一个形状为 [batch_size, history_size, seq_len] 的张量
-    print(history)
-    current_trajectory = torch.randint(0, candidate_size, (batch_size, seq_len)) # 假设有两个批次，current_trajectory 是一个形状为 [batch_size, seq_len] 的张量
-    print(current_trajectory)
+    history =torch.randint(0, CANDIDATE_SIZE+1, (BATCH_SIZE, history_size, SEQ_LEN)) # 假设有两个批次，history 是一个形状为 [batch_size, history_size, seq_len] 的张量
+    print(history.shape)
+    current_trajectory = torch.randint(0, CANDIDATE_SIZE+1, (BATCH_SIZE, SEQ_LEN)) # 假设有两个批次，current_trajectory 是一个形状为 [batch_size, seq_len] 的张量
+    print(current_trajectory.shape)
 
     p = net(history, current_trajectory)  # 通过网络进行推理
     print("prob:==================>")
