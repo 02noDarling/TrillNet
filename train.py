@@ -20,7 +20,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(net.parameters(), lr=1e-4)  # Adam优化器
     criterion = nn.CrossEntropyLoss()  # 交叉熵损失
     
-    input_dir = "generate copy"
+    input_dir = "generate_linear"
     users_trajectories = data2list(input_dir)
     for epoch in range(EPOCHS):
         for user_trajectories in users_trajectories:

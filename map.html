@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>轨迹展示</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    #panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      width: 280px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+    }
+    textarea { width: 100%; height: 100px; margin-bottom: 8px; }
+    button {
+      margin: 2px;
+      padding: 4px 8px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover { background-color: #45a049; }
+    h4 {
+      margin-top: 16px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 4px;
+    }
+    .error-message {
+      color: red;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+<div id="panel">
+  <button onclick="toggleHistoryTrajectory()">显示/隐藏历史轨迹</button>
+  <h4>编辑当前轨迹</h4>
+  <textarea id="currentTrajectoryInput" placeholder="请输入ID列表，用逗号隔开，如：1,2,-1,4"></textarea>
+  <button onclick="submitCurrentTrajectory()">提交当前轨迹</button>
+  <button onclick="completeCurrentTrajectory()">补全当前轨迹</button>
+  <button onclick="removeCurrentTrajectory()">删除当前轨迹</button>
+  <div id="currentError" class="error-message"></div>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script>
+  // 初始化地图
+  let map;
+  try {
+    map = L.map('map', {
+      center: [39.925, 116.375],
+      zoom: 13,
+      minZoom: 11,
+      maxZoom: 18,
+      maxBounds: [[39.75, 116.15], [40.1, 116.6]],
+      maxBoundsViscosity: 1.0
+    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  } catch (error) {
+    console.error("地图初始化失败:", error);
+    alert("无法初始化地图，请检查网络或代码");
+  }
+
+  let historyVisible = false;
+  let historyLayers = [];
+  let currentTrajectoryLayer = null;
+  let currentTrajectoryArrows = [];
+  let currentTrajectoryMarkers = [];
+
+  // 历史轨迹颜色列表（排除红色）
+  const historyColors = ['blue', 'green', 'purple', 'orange', 'brown', 'cyan'];
+
+  function toggleHistoryTrajectory() {
+    if (historyVisible) {
+      historyLayers.forEach(layer => map.removeLayer(layer));
+      historyLayers = [];
+    } else {
+      fetch("http://localhost:5000/get_history")
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          console.log("获取的历史轨迹:", data);
+          const trajectories = data.trajectories || [];
+          let allBounds = [];
+          trajectories.forEach((trajectory, index) => {
+            const color = historyColors[index % historyColors.length];
+            let validPoints = [];
+            trajectory.forEach((point, i) => {
+              if (point !== null) {
+                validPoints.push(point);
+                const marker = L.circleMarker(point, {
+                  radius: 3,
+                  color: color,
+                  fillColor: color,
+                  fillOpacity: 0.8
+                }).addTo(map);
+                historyLayers.push(marker);
+              } else if (validPoints.length > 0) {
+                const polyline = L.polyline(validPoints, { color: color, weight: 4 }).addTo(map);
+                historyLayers.push(polyline);
+                validPoints = [];
+              }
+            });
+            if (validPoints.length > 0) {
+              const polyline = L.polyline(validPoints, { color: color, weight: 4 }).addTo(map);
+              historyLayers.push(polyline);
+              allBounds.push(...validPoints);
+            }
+          });
+          if (allBounds.length > 0) {
+            map.fitBounds(L.latLngBounds(allBounds));
+          } else {
+            showError("currentError", "没有可显示的历史轨迹");
+          }
+        })
+        .catch(error => {
+          console.error("获取历史轨迹错误:", error);
+          showError("currentError", "无法加载历史轨迹，请检查服务器");
+        });
+    }
+    historyVisible = !historyVisible;
+  }
+
+  function showError(elementId, message) {
+    const errorElement = document.getElementById(elementId);
+    errorElement.textContent = message;
+    setTimeout(() => errorElement.textContent = '', 3000);
+  }
+
+  function addArrows(points, ids, color) {
+    if (!points || points.length < 2 || !ids) return;
+    for (let i = 0; i < points.length - 1; i++) {
+      const startPoint = points[i];
+      const endPoint = points[i + 1];
+      if (!startPoint || !endPoint || ids[i] === -1 || ids[i + 1] === -1) continue;
+      const angle = getAngle(startPoint, endPoint);
+      const arrowIcon = L.divIcon({
+        className: 'leaflet-arrow',
+        html: `<div style="transform: rotate(${angle}deg); width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 20px solid ${color};"></div>`,
+        iconSize: [20, 20],
+        iconAnchor: [10, 20]
+      });
+      const arrowMarker = L.marker(endPoint, { icon: arrowIcon }).addTo(map);
+      currentTrajectoryArrows.push(arrowMarker);
+    }
+  }
+
+  function getAngle(start, end) {
+    const dy = end[0] - start[0];
+    const dx = end[1] - start[1];
+    return Math.atan2(dy, dx) * 180 / Math.PI;
+  }
+
+  function removeArrowsAndMarkers() {
+    currentTrajectoryArrows.forEach(marker => {
+      if (marker && typeof marker.remove === 'function') {
+        marker.remove();
+      }
+    });
+    currentTrajectoryMarkers.forEach(marker => {
+      if (marker && typeof marker.remove === 'function') {
+        marker.remove();
+      }
+    });
+    currentTrajectoryArrows = [];
+    currentTrajectoryMarkers = [];
+  }
+
+  function submitCurrentTrajectory() {
+    const input = document.getElementById("currentTrajectoryInput").value;
+    if (!input.trim()) {
+      showError("currentError", "请输入轨迹数据");
+      return;
+    }
+    const idList = input.split(",").map(s => {
+      const val = parseFloat(s.trim());
+      return isNaN(val) ? -1 : val;
+    });
+    if (idList.length === 0) {
+      showError("currentError", "轨迹数据无效");
+      return;
+    }
+
+    fetch("http://localhost:5000/convert_trajectory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trajectory: idList })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        console.log("提交当前轨迹数据:", data);
+        const points = data.points.map(p => p.coord);
+        // 清空旧轨迹
+        if (currentTrajectoryLayer) {
+          currentTrajectoryLayer.remove();
+          currentTrajectoryLayer = null;
+        }
+        removeArrowsAndMarkers();
+
+        const layers = [];
+        let polylinePoints = [];
+        points.forEach((point, i) => {
+          if (point !== null) {
+            polylinePoints.push(point);
+            const marker = L.circleMarker(point, {
+              radius: 4,
+              color: 'red',
+              fillColor: 'red',
+              fillOpacity: 0.8,
+              draggable: true
+            }).addTo(map).on('dragend', function(e) {
+              const newLatLng = e.target.getLatLng();
+              points[i] = [newLatLng.lat, newLatLng.lng];
+              updateCurrentTrajectory(points, idList);
+            });
+            currentTrajectoryMarkers.push(marker);
+          } else if (polylinePoints.length > 0) {
+            const polyline = L.polyline(polylinePoints, { color: 'red', weight: 4, dashArray: '5, 5' }).addTo(map);
+            layers.push(polyline);
+            polylinePoints = [];
+          }
+        });
+
+        if (polylinePoints.length > 0) {
+          const polyline = L.polyline(polylinePoints, { color: 'red', weight: 4, dashArray: '5, 5' }).addTo(map);
+          layers.push(polyline);
+        }
+
+        // 将所有折线合并为一个 layer group
+        if (layers.length > 0) {
+          currentTrajectoryLayer = L.layerGroup(layers).addTo(map);
+        }
+
+        addArrows(points, idList, 'red');
+
+        if (points.filter(p => p !== null).length > 0) {
+          map.fitBounds(L.polyline(points.filter(p => p !== null)).getBounds());
+        }
+      })
+      .catch(error => {
+        console.error("提交当前轨迹错误:", error);
+        showError("currentError", "提交轨迹失败，请检查服务器");
+      });
+  }
+
+  function updateCurrentTrajectory(points, ids) {
+    if (currentTrajectoryLayer) {
+      currentTrajectoryLayer.remove();
+      currentTrajectoryLayer = null;
+    }
+    removeArrowsAndMarkers();
+
+    const layers = [];
+    let polylinePoints = [];
+    points.forEach((point, i) => {
+      if (point !== null) {
+        polylinePoints.push(point);
+        const marker = L.circleMarker(point, {
+          radius: 4,
+          color: 'red',
+          fillColor: 'red',
+          fillOpacity: 0.8,
+          draggable: true
+        }).addTo(map).on('dragend', function(e) {
+          const newLatLng = e.target.getLatLng();
+          points[i] = [newLatLng.lat, newLatLng.lng];
+          updateCurrentTrajectory(points, ids);
+        });
+        currentTrajectoryMarkers.push(marker);
+      } else if (polylinePoints.length > 0) {
+        const polyline = L.polyline(polylinePoints, { color: 'red', weight: 4, dashArray: '5, 5' }).addTo(map);
+        layers.push(polyline);
+        polylinePoints = [];
+      }
+    });
+
+    if (polylinePoints.length > 0) {
+      const polyline = L.polyline(polylinePoints, { color: 'red', weight: 4, dashArray: '5, 5' }).addTo(map);
+      layers.push(polyline);
+    }
+
+    if (layers.length > 0) {
+      currentTrajectoryLayer = L.layerGroup(layers).addTo(map);
+    }
+
+    addArrows(points, ids, 'red');
+  }
+
+  function completeCurrentTrajectory() {
+    const input = document.getElementById("currentTrajectoryInput").value;
+    if (!input.trim()) {
+      showError("currentError", "请先输入轨迹数据");
+      return;
+    }
+    const idList = input.split(",").map(s => {
+      const val = parseFloat(s.trim());
+      return isNaN(val) ? -1 : val;
+    });
+    if (!idList.includes(-1)) {
+      showError("currentError", "轨迹不包含缺失点(-1)");
+      return;
+    }
+
+    fetch("http://localhost:5000/complete_trajectory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trajectory: idList })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        return res.json();
+      })
+      .then(data => {
+        console.log("补全轨迹数据:", data);
+        const points = data.points;
+        if (currentTrajectoryLayer) {
+          currentTrajectoryLayer.remove();
+          currentTrajectoryLayer = null;
+        }
+        removeArrowsAndMarkers();
+
+        const layers = [];
+        let polylinePoints = [];
+        points.forEach((point, i) => {
+          if (point.coord !== null) {
+            polylinePoints.push(point.coord);
+            const radius = point.inferred ? 8 : 4;
+            const color = point.inferred ? 'black' : 'red';
+            const marker = L.circleMarker(point.coord, {
+              radius: radius,
+              color: color,
+              fillColor: color,
+              fillOpacity: 0.8,
+              draggable: true
+            }).addTo(map).on('dragend', function(e) {
+              const newLatLng = e.target.getLatLng();
+              points[i].coord = [newLatLng.lat, newLatLng.lng];
+              updateCurrentTrajectory(points.map(p => p.coord), idList);
+            });
+            currentTrajectoryMarkers.push(marker);
+          } else if (polylinePoints.length > 0) {
+            const polyline = L.polyline(polylinePoints, { color: 'red', weight: 4, dashArray: '5, 5' }).addTo(map);
+            layers.push(polyline);
+            polylinePoints = [];
+          }
+        });
+
+        if (polylinePoints.length > 0) {
+          const polyline = L.polyline(polylinePoints, { color: 'red', weight: 4, dashArray: '5, 5' }).addTo(map);
+          layers.push(polyline);
+        }
+
+        if (layers.length > 0) {
+          currentTrajectoryLayer = L.layerGroup(layers).addTo(map);
+        }
+
+        addArrows(points.map(p => p.coord), idList, 'red');
+
+        if (points.filter(p => p.coord !== null).length > 0) {
+          map.fitBounds(L.polyline(points.map(p => p.coord).filter(p => p !== null)).getBounds());
+        }
+      })
+      .catch(error => {
+        console.error("补全轨迹错误:", error);
+        showError("currentError", "补全轨迹失败，请检查服务器");
+      });
+  }
+
+  function removeCurrentTrajectory() {
+    console.log("删除当前轨迹，当前状态:", {
+      hasLayer: !!currentTrajectoryLayer,
+      arrowCount: currentTrajectoryArrows.length,
+      markerCount: currentTrajectoryMarkers.length
+    });
+    // 移除折线
+    if (currentTrajectoryLayer) {
+      currentTrajectoryLayer.remove();
+      currentTrajectoryLayer = null;
+    }
+    // 移除箭头和标记
+    removeArrowsAndMarkers();
+    // 清空输入框
+    document.getElementById("currentTrajectoryInput").value = "";
+    console.log("删除完成");
+  }
+</script>
+</body>
+</html>

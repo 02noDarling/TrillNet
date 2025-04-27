@@ -1,6 +1,10 @@
 .venv
 __pycache__
 trillnet_weights.pth
+trillnet_weights_old.pth
 data
 generate
 generate_copy
+generate_linear
+history.csv
+history_trajectories.csv
