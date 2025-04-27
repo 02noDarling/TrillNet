@@ -3,3 +3,4 @@ __pycache__
 trillnet_weights.pth
 data
 generate
+generate_copy

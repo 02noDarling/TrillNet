@@ -10,15 +10,17 @@ import numpy as np
 import os
     
 if __name__ == "__main__":
-    net = TrillNet(dim=EMBED_DIM, window_size=WINDOW_SIZE, candidate_size=CANDIDATE_SIZE)
+    # net = TrillNet(dim=EMBED_DIM, window_size=WINDOW_SIZE, candidate_size=CANDIDATE_SIZE)
+    net = TrillNet(dim=EMBED_DIM, num_heads=NHEAD, window_size=WINDOW_SIZE, candidate_size=CANDIDATE_SIZE)
     if os.path.exists("trillnet_weights.pth"):
         checkpoints = torch.load("trillnet_weights.pth", map_location=DEVICE)
         net.load_state_dict(checkpoints)
+        print("YES!!!!")
     net = net.to(DEVICE)
     optimizer = optim.Adam(net.parameters(), lr=1e-4)  # Adam优化器
     criterion = nn.CrossEntropyLoss()  # 交叉熵损失
     
-    input_dir = "generate"
+    input_dir = "generate copy"
     users_trajectories = data2list(input_dir)
     for epoch in range(EPOCHS):
         for user_trajectories in users_trajectories:
