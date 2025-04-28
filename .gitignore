@@ -2,9 +2,15 @@
 __pycache__
 trillnet_weights.pth
 trillnet_weights_old.pth
+trillnet_weights_trill_linear.pth
+trillnet_weights_trill_old_gpu.pth
 data
 generate
 generate_copy
+generate_copy_coord
 generate_linear
 history.csv
 history_trajectories.csv
+
+final_user_augmented
+final_user_augmented_coord

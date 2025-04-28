@@ -168,6 +168,7 @@ def infer(current_trajectory):
     print("历史轨迹如下")
     for history_trajectory in history:
         print(history_trajectory)
+    
 
 
     # print(history)

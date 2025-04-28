@@ -4,21 +4,118 @@ from config import *
 from MaskedMultiheadSelfAttention import MaskedMultiheadSelfAttention
 from WindowBasedCrossAttention import WindowBasedCrossAttention
 from InformationAggregationLayer import InformationAggregationLayer
+from TransformerEncoder import *
+
+import torch
+
+# def get_graph(history, candidate_size, batch_size):
+#     # print(history.shape)
+#     # 初始化图的邻接矩阵
+#     array = torch.zeros(batch_size, candidate_size, candidate_size)
+#     # _, seq_x, seq_y = history.shape  # 获取历史张量的形状
+#     # print(f"History shape: {history.shape}")
+#     # print(f"history_shape:{history.shape}")
+#     # 使用批量化操作构建邻接矩阵
+#     history_1 = history[:, :, :-1]  # 当前节点
+#     history_2 = history[:, :, 1:]   # 下一个节点
+#     mask = (history_1 != history_2) & (history_1 != candidate_size) & (history_2 != candidate_size)
+#     # 通过广播将相邻节点不相等的部分置为1，累加到邻接矩阵
+
+#     # for b in range(batch_size):
+#     #     array[b, history_1[b, mask[b]], history_2[b, mask[b]]] += 1
+
+#     for b in range(batch_size):
+#         for i in range(history.shape[1]):
+#             for j in range(history.shape[2]-1):
+#                 if history[b][i][j] != candidate_size and history[b][i][j+1] != candidate_size and history[b][i][j] != history[b][i][j+1]:
+#                     array[b][history[b][i][j]][history[b][i][j+1]] += 1
+    
+#     # print(array)
+#     # print(array[0][2][4])
+#     # exit(0)
+#     return array
+
+# def get_graph(history, candidate_size, batch_size):
+#     """
+#     构建加权全局转移图的邻接矩阵。
+    
+#     参数：
+#     - history: 历史轨迹张量，形状为 (batch_size, num_trajectories, seq_len)
+#     - candidate_size: 候选位置的数量（节点数量）
+#     - batch_size: 批次大小
+#     - current_idx: 当前轨迹的下标，用于计算时间权重
+    
+#     返回：
+#     - array: 加权邻接矩阵，形状为 (batch_size, candidate_size, candidate_size)
+#     """
+#     # 初始化图的邻接矩阵
+#     array = torch.zeros(batch_size, candidate_size, candidate_size)
+    
+#     # 获取历史轨迹的形状
+#     _, num_trajectories, seq_len = history.shape  # history.shape = (batch_size, num_trajectories, seq_len)
+    
+#     # 计算每条历史轨迹的时间权重 w_j = 1 + e^(-0.01 * (当前轨迹下标 - 历史轨迹下标))
+#     # 历史轨迹下标从 0 到 num_trajectories-1
+#     history_indices = torch.arange(num_trajectories, dtype=torch.float32)  # [0, 1, ..., num_trajectories-1]
+#     weights = 1 + torch.exp(-0.01 * (num_trajectories - 1 - history_indices))  # 形状为 (num_trajectories,)
+
+    
+#     # 使用批量化操作构建加权邻接矩阵
+#     history_1 = history[:, :, :-1]  # 当前节点，形状为 (batch_size, num_trajectories, seq_len-1)
+#     history_2 = history[:, :, 1:]   # 下一个节点，形状为 (batch_size, num_trajectories, seq_len-1)
+    
+#     # 创建掩码，确保只处理有效转移（节点不相等且不为 candidate_size）
+#     mask = (history_1 != history_2) & (history_1 != candidate_size) & (history_2 != candidate_size)
+#     # 形状为 (batch_size, num_trajectories, seq_len-1)
+    
+#     # 为每个批次构建加权邻接矩阵
+#     for b in range(batch_size):
+#         for j in range(num_trajectories):
+#             # 获取当前轨迹的掩码
+#             traj_mask = mask[b, j]  # 形状为 (seq_len-1,)
+#             # 获取当前轨迹的转移对
+#             src_nodes = history_1[b, j, traj_mask]  # 源节点
+#             dst_nodes = history_2[b, j, traj_mask]  # 目标节点
+#             # 累加加权转移频率
+#             array[b, src_nodes, dst_nodes] += 1
+    
+#     print(array.shape)
+#     print(array)
+#     exit(0)
+#     return array
 
 def get_graph(history, candidate_size, batch_size):
+    """
+    构建加权全局转移图的邻接矩阵。
+    
+    参数：
+    - history: 历史轨迹张量，形状为 (batch_size, num_trajectories, seq_len)
+    - candidate_size: 候选位置的数量（节点数量）
+    - batch_size: 批次大小
+    - current_idx: 当前轨迹的下标，用于计算时间权重
+    
+    返回：
+    - array: 加权邻接矩阵，形状为 (batch_size, candidate_size, candidate_size)
+    """
     # 初始化图的邻接矩阵
-    array = torch.zeros(batch_size, candidate_size, candidate_size)
-    # _, seq_x, seq_y = history.shape  # 获取历史张量的形状
-    # print(f"History shape: {history.shape}")
-    # print(f"history_shape:{history.shape}")
-    # 使用批量化操作构建邻接矩阵
-    history_1 = history[:, :, :-1]  # 当前节点
-    history_2 = history[:, :, 1:]   # 下一个节点
-    mask = (history_1 != history_2) & (history_1 != candidate_size) & (history_2 != candidate_size)
-    # 通过广播将相邻节点不相等的部分置为1，累加到邻接矩阵
-
+    array = torch.zeros(batch_size, candidate_size, candidate_size, dtype=torch.float32)
+    
+    # 获取历史轨迹的形状
+    _, num_trajectories, seq_len = history.shape  # history.shape = (batch_size, num_trajectories, seq_len)
+    
+    # 计算每条历史轨迹的时间权重 w_j = 1 + e^(-0.01 * (当前轨迹下标 - 历史轨迹下标))
+    history_indices = torch.arange(num_trajectories, dtype=torch.float32)  # [0, 1, ..., num_trajectories-1]
+    weights = 1 + torch.exp(-0.01 * (num_trajectories - 1 - history_indices))  # 形状为 (num_trajectories,)
+    
+    # 遍历批次、每条历史轨迹、每个时间步，构建加权邻接矩阵
     for b in range(batch_size):
-        array[b, history_1[b, mask[b]], history_2[b, mask[b]]] += 1
+        for i in range(num_trajectories):
+            for j in range(seq_len - 1):
+                src_node = history[b, i, j].item()  # 当前节点
+                dst_node = history[b, i, j + 1].item()  # 下一个节点
+                # 检查条件：节点不等于 candidate_size（无效位置），且相邻节点不相等
+                if src_node != candidate_size and dst_node != candidate_size and src_node != dst_node:
+                    array[b, src_node, dst_node] += weights[i]
     
     return array
 
@@ -36,6 +133,7 @@ def Mytransform(A, candidate_size, batch_size):
     # print(f"D:================>")
     # print(D)
     
+
     # 执行 D @ A @ D 操作
     return D @ A @ D  # 拉普拉斯矩阵变换
 
@@ -177,7 +275,9 @@ class TrillNet(nn.Module):
 
         self.null_embedding = nn.Parameter(torch.rand(2*dim))
 
-        self.MaskedMultiheadSelfAttention = MaskedMultiheadSelfAttention(2*dim, num_heads)
+        # self.MaskedMultiheadSelfAttention = MaskedMultiheadSelfAttention(2*dim, num_heads)
+        self.TransformerEncoderLayer = TransformerEncoderLayer(2*dim, num_heads)
+        self.TransformerEncoder = TransformerEncoder(self.TransformerEncoderLayer, ENCODER_NUMS)
 
         self.WindowBasedCrossAttention = WindowBasedCrossAttention(2*dim, window_size)
 
@@ -192,7 +292,8 @@ class TrillNet(nn.Module):
         A = A.to(DEVICE)
         E = E.to(DEVICE)
         Eg = self.relu(self.gcn(A @ E))  # 应用线性层与激活函数
-        pos_embeddings = torch.cat((Eg, E),dim=-1)
+        # pos_embeddings = torch.cat((Eg, E),dim=-1)
+        pos_embeddings = torch.cat((E, E),dim=-1)
         temporal_embeddings = generate_temporal_embeddings(history.shape[2], 2*self.dim).to(DEVICE)
         fused_history_embeddings = fuse_spatial_temporal(pos_embeddings, history, temporal_embeddings, self.dim, self.null_embedding, self.candidate_size, 0)
         fused_current_embeddings = fuse_spatial_temporal(pos_embeddings, current_trajectory, temporal_embeddings, self.dim, self.null_embedding, self.candidate_size, 1)
@@ -219,7 +320,8 @@ class TrillNet(nn.Module):
 
         fused_history_embeddings_mask = fused_history_embeddings_mask.reshape(history.shape[0] * history.shape[1], history.shape[2], history.shape[2])
 
-        mmsa_history_embeddings = self.MaskedMultiheadSelfAttention(fused_history_embeddings, fused_history_embeddings_mask)
+        # mmsa_history_embeddings = self.MaskedMultiheadSelfAttention(fused_history_embeddings, fused_history_embeddings_mask)
+        mmsa_history_embeddings = self.TransformerEncoder(fused_history_embeddings, fused_history_embeddings_mask)
 
         def create_current_mask_optimized(current_trajectory, candidate_size, device):
             # 直接创建掩码矩阵
@@ -236,7 +338,8 @@ class TrillNet(nn.Module):
         #         if current_trajectory[i][j] == self.candidate_size:
         #             fused_current_embeddings_mask[i][:,j] = float('-inf')
 
-        mmsa_current_embeddings = self.MaskedMultiheadSelfAttention(fused_current_embeddings, fused_current_embeddings_mask)
+        # mmsa_current_embeddings = self.MaskedMultiheadSelfAttention(fused_current_embeddings, fused_current_embeddings_mask)
+        mmsa_current_embeddings = self.TransformerEncoder(fused_current_embeddings, fused_current_embeddings_mask)
         
         # # 将历史轨迹的输出重新形状为原始形状 [batch_size, trajectory_size, seq_len, dim]
         # mmsa_history_embeddings = mmsa_history_embeddings.view(batch_size, history.shape[1], history.shape[2], 2*self.dim)

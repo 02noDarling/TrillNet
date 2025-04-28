@@ -5,6 +5,8 @@ from torch.utils.data import Dataset, DataLoader
 from trill import TrillNet
 from config import *
 import os
+import csv
+import random
 
 class TrajectoryDataset(Dataset):
     def __init__(self, history, current_trajectory, E):
@@ -38,15 +40,64 @@ if __name__ == "__main__":
         net.load_state_dict(checkpoints)
         print("YES!!!!")
     net = net.to(DEVICE)
+
+    file_path = "/Users/hudaili/Desktop/VsCodeProjects/TrillNet/history_trajectories.csv"
+    history = []
+    with open(file_path, 'r') as file:
+        reader = csv.reader(file)
+        for row in reader:
+            trajectory = []
+            for item in row:
+                item = int(item)
+                if item == -1:
+                    item =CANDIDATE_SIZE
+                trajectory.append(item)
+            history.append(trajectory)
+    history = history[:-1]
+    history = torch.tensor([history])
+    current_trajectory = [
+       -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,454,534,415,295,-1,178,58,61,180,-1,-1,-1,172,212,331,-1,330,-1,-1,406,287,-1,527,485,-1,-1,-1,-1,-1,-1,-1,-1
+    ]
+    for i,item in enumerate(current_trajectory):
+        if item == -1:
+            current_trajectory[i] =CANDIDATE_SIZE
+    print(current_trajectory)
+
+    label_current_trajectory = [current_trajectory.copy()]
+
+    label_list = [ ]
+    for i in range(48):
+        if current_trajectory[i] != CANDIDATE_SIZE:
+            label_list.append(i)
+    k = 10
+    label_list = random.sample(label_list, k)
+    for item in label_list:
+        current_trajectory[item] = CANDIDATE_SIZE
+    print("去除了10个位置")
+    print(current_trajectory)
+    current_trajectory = torch.tensor([current_trajectory])
+
+    criterion = nn.CrossEntropyLoss()  # 交叉熵损失
+    p = net(history, current_trajectory)
     
-    history = torch.randint(0, CANDIDATE_SIZE+1, (batch_size, history_size, SEQ_LEN))
-    current_trajectory = torch.randint(0, CANDIDATE_SIZE+1, (batch_size, SEQ_LEN))
+    batch_indices = torch.arange(p.shape[0], device=DEVICE).unsqueeze(1).expand(-1, len(label_list))
+    item_indices = torch.tensor(label_list, device=DEVICE).unsqueeze(0).expand(p.shape[0], -1)
+    
+    # 一次性提取所有概率
+    all_probs = p[batch_indices, item_indices]  # [batch_size, len(label_list)]
+    
+    # 一次性提取所有目标
+    all_targets = torch.tensor(label_current_trajectory, device=DEVICE)[batch_indices, item_indices]
+    
+    # 计算所有损失
+    all_probs = all_probs.squeeze(0)
+    all_targets = all_targets.squeeze(0)
 
-    current_trajectory = torch.tensor([[ 301,  1600,  484,  1600,  262, 1482,  969,  520,  982,  518, 1595,  663,
-          906,  977,  876,  478, 1126,  611, 1331,  1600,  497,  392,  370, 1028,
-          896, 1509, 1600,  867,  863,  1600, 1402,  616,  1600, 1600,  714, 1450,
-           10,  250, 1360,   64,  876,  324, 1253,  322,  497,  160, 1193, 1058]])
-
+    print(all_targets)
+    all_losses = criterion(all_probs, all_targets)
+    # 计算平均损失
+    mean_loss = all_losses.mean()
+    print(f"mean_loss:{mean_loss.item()}")
     current_trajectory = batch_trajectory_recover(net, history, current_trajectory)
     print(current_trajectory)
     exit(0)

@@ -17,10 +17,10 @@ if __name__ == "__main__":
         net.load_state_dict(checkpoints)
         print("YES!!!!")
     net = net.to(DEVICE)
-    optimizer = optim.Adam(net.parameters(), lr=1e-4)  # Adam优化器
+    optimizer = optim.Adam(net.parameters(), lr=5e-5)  # Adam优化器
     criterion = nn.CrossEntropyLoss()  # 交叉熵损失
     
-    input_dir = "generate_linear"
+    input_dir = "final_user_augmented"
     users_trajectories = data2list(input_dir)
     for epoch in range(EPOCHS):
         for user_trajectories in users_trajectories:
@@ -37,7 +37,7 @@ if __name__ == "__main__":
                 for i in range(seq_len):
                     if current_trajectory[0][i] != CANDIDATE_SIZE:
                         label_list.append(i)
-                k = 5
+                k = 10
                 label_list = random.sample(label_list, k)
                 for item in label_list:
                     current_trajectory[0][item] = CANDIDATE_SIZE
