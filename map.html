@@ -142,26 +142,63 @@
   }
 
   function addArrows(points, ids, color) {
-    if (!points || points.length < 2 || !ids) return;
+    console.log("添加箭头，points:", points, "ids:", ids, "color:", color);
+    if (!points || points.length < 2 || !ids) {
+      console.warn("无效的 points 或 ids，无法添加箭头");
+      return;
+    }
     for (let i = 0; i < points.length - 1; i++) {
       const startPoint = points[i];
       const endPoint = points[i + 1];
-      if (!startPoint || !endPoint || ids[i] === -1 || ids[i + 1] === -1) continue;
+      // if (!startPoint || !endPoint || !Array.isArray(startPoint) || !Array.isArray(endPoint) ) {
+      //   console.log(`跳过箭头 [${i}]: start=${startPoint}, end=${endPoint}, ids=${ids[i]},${ids[i+1]}`);
+      //   console.log(typeof startPoint)
+      //   continue;
+      // }
+      if (!startPoint || !endPoint ) {
+        console.log(`跳过箭头 [${i}]: start=${startPoint}, end=${endPoint}, ids=${ids[i]},${ids[i+1]}`);
+        console.log(typeof startPoint)
+        continue;
+      }
       const angle = getAngle(startPoint, endPoint);
+      console.log(`箭头 [${i}]: start=${startPoint}, end=${endPoint}, angle=${angle}`);
+      // const arrowIcon = L.divIcon({
+      //   className: 'leaflet-arrow',
+      //   html: `<div style="transform: rotate(${angle}deg);"></div>`,
+      //   iconSize: [20, 20],
+      //   iconAnchor: [10, 20]
+      // });
       const arrowIcon = L.divIcon({
-        className: 'leaflet-arrow',
-        html: `<div style="transform: rotate(${angle}deg); width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-bottom: 20px solid ${color};"></div>`,
-        iconSize: [20, 20],
-        iconAnchor: [10, 20]
+        className: '',
+        html: `<div style="width: 10px; height: 10px; background-color: purple; transform: rotate(45deg) rotate(${angle}deg);"></div>`,
+        iconSize: [15, 15],
+        iconAnchor: [7.5, 7.5]
       });
+      console.log("有箭头了")
+      console.log(angle)
       const arrowMarker = L.marker(endPoint, { icon: arrowIcon }).addTo(map);
       currentTrajectoryArrows.push(arrowMarker);
     }
   }
 
   function getAngle(start, end) {
-    const dy = end[0] - start[0];
-    const dx = end[1] - start[1];
+    // 验证输入
+    if (!start || !end || !Array.isArray(start) || !Array.isArray(end) || start.length < 2 || end.length < 2) {
+      console.warn("无效的 start 或 end 坐标:", start, end);
+      return 0;
+    }
+    // 将经纬度转换为屏幕像素坐标
+    const startPixel = map.latLngToLayerPoint([start[0], start[1]]);
+    const endPixel = map.latLngToLayerPoint([end[0], end[1]]);
+    // 验证像素坐标
+    if (!startPixel || !endPixel || isNaN(startPixel.x) || isNaN(startPixel.y) || isNaN(endPixel.x) || isNaN(endPixel.y)) {
+      console.warn("无效的像素坐标:", startPixel, endPixel);
+      return 0;
+    }
+    // 计算像素坐标差
+    const dx = endPixel.x - startPixel.x;
+    const dy = endPixel.y - startPixel.y;
+    // 计算角度（屏幕坐标系：x 向右，y 向下）
     return Math.atan2(dy, dx) * 180 / Math.PI;
   }
 
