@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 轨迹恢复可视化平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 h-screen flex items-center justify-center">
+    <!-- <div class="container">
+        <h2>轨迹恢复平台</h2>
+        <div id="login">
+            <input type="text" id="username" placeholder="用户名">
+            <input type="password" id="password" placeholder="密码">
+            <button onclick="login()">登录</button>
+            <button onclick="register()">注册</button>
+        </div>
+        <div id="error" style="color:red;"></div>
+    </div> -->
+    <div class="bg-white p-6 rounded-lg shadow-lg w-96">
+        <h1 class="text-2xl font-bold mb-4 text-center">登录</h1>
+        <div class="mb-4">
+            <label class="block text-gray-700">用户名</label>
+            <input id="username" type="text" class="w-full p-2 border rounded" placeholder="请输入用户名">
+        </div>
+        <div class="mb-4">
+            <label class="block text-gray-700">密码</label>
+            <input id="password" type="password" class="w-full p-2 border rounded" placeholder="请输入密码">
+        </div>
+        <div class="flex space-x-2"> <!-- 添加flex容器和间距 -->
+            <button onclick="login()" class="flex-1 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">登录</button>
+            <button onclick="register()" class="flex-1 bg-gray-500 text-white p-2 rounded hover:bg-gray-600">注册</button>
+        </div>
+        <p id="login-error" class="text-red-500 text-sm mt-2 text-center"></p>
+    </div>
+    
+
+    <script>
+        function login() {
+            const username = document.getElementById('username').value
+            const password = document.getElementById('password').value
+            fetch('/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password}),
+                credentials: 'include'
+            }).then(res => res.json()).then(data => {
+                console.log("YYY")
+                if (data.success) window.location.href = 'experiment_ui'
+                else {
+                    // showError(data.error || '登录失败')
+                    alert("登录失败")
+                }
+            })
+        }
+
+        function register() {
+            const username = document.getElementById('username').value
+            const password = document.getElementById('password').value
+            fetch('/register', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password}),
+                credentials: 'include'
+            }).then(res => res.json()).then(data => {
+                if (data.success) alert('注册成功')
+                else {
+                    // showError(data.error || '注册失败')
+                    alert("注册失败")
+                }
+            })
+        }
+
+        function showError(msg) {
+            document.getElementById('error').innerText = msg
+        }
+    </script>
+</body>
+</html>

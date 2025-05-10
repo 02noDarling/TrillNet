@@ -4,9 +4,22 @@
   <meta charset="utf-8" />
   <title>轨迹展示</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/lib/leaflet/leaflet.css" />
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    html, body, #map { height: 100%; margin: 0; }
+    /* html, body, #map { height: 100%; margin: 0; } */
+    html, body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden; /* 防止滚动条导致空白 */
+    }
+    #map {
+        height: 100vh;   /* 使用视口高度 */
+        width: 100vw;    /* 使用视口宽度 */
+        position: fixed; /* 固定定位消除边距 */
+        left: 0;
+        top: 0;
+    }
     #panel {
       position: absolute;
       top: 10px;
@@ -42,8 +55,9 @@
     }
   </style>
 </head>
-<body>
-<div id="panel">
+<body class="bg-gray-100 h-screen">
+<!-- <div id="panel">
+  <button onclick="window.location.href='experiment_ui'">返回实验列表</button>
   <button onclick="toggleHistoryTrajectory()">显示/隐藏历史轨迹</button>
   <h4>编辑当前轨迹</h4>
   <textarea id="currentTrajectoryInput" placeholder="请输入ID列表，用逗号隔开，如：1,2,-1,4"></textarea>
@@ -54,13 +68,33 @@
   <button onclick="saveTrajectory()">保存轨迹</button>
   <div id="currentError" class="error-message"></div>
 </div>
-<div id="map"></div>
+<div id="map"></div> -->
+<div id="trajectory-recovery-page" class="h-full">
+  <div class="absolute top-4 left-4 z-[1000] bg-white p-4 rounded-lg shadow-lg w-80">
+    <button onclick="window.location.href='experiment_ui'" class="mb-2 w-full bg-gray-500 text-white p-2 rounded hover:bg-gray-600">返回</button>
+    <button onclick="toggleHistoryTrajectory()" class="mb-2 w-full bg-gray-500 text-white p-2 rounded hover:bg-gray-600">显示历史轨迹</button>
+    <h4 class="text-lg font-bold mb-2 border-b pb-2">编辑当前轨迹</h4>
+    <textarea id="currentTrajectoryInput" class="w-full h-24 mb-2 p-2 border rounded" placeholder="请输入ID列表，用逗号隔开，如：1,2,-1,4"></textarea>
+    <button onclick="submitCurrentTrajectory()" class="mb-2 w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">提交当前轨迹</button>
+    <button onclick="completeCurrentTrajectory()" class="mb-2 w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">补全当前轨迹</button>
+    <button onclick="removeCurrentTrajectory()" class="mb-2 w-full bg-red-500 text-white p-2 rounded hover:bg-red-600">删除当前轨迹</button>
+    <button onclick="simulateTrajectory()" class="mb-2 w-full bg-green-500 text-white p-2 rounded hover:bg-green-600">模拟轨迹</button>
+    <button onclick="saveTrajectory()" class="mb-2 w-full bg-purple-500 text-white p-2 rounded hover:bg-purple-600">保存轨迹</button>
+    <div id="currentError" class="text-red-500 text-sm mt-2"></div>
+  </div>
+  <div id="map"></div>
+</div>
 
-<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script src="/static/lib/leaflet/leaflet.js"></script>
 <script>
+  // 在页面加载时获取实验ID
+  const urlParams = new URLSearchParams(window.location.search)
+  const expId = urlParams.get('expId')
+
   let map;
   try {
     map = L.map('map', {
+      zoomControl: false,
       center: [39.925, 116.375],
       zoom: 13,
       minZoom: 11,
@@ -68,11 +102,16 @@
       maxBounds: [[39.75, 116.15], [40.1, 116.6]],
       maxBoundsViscosity: 1.0
     });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    // L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    L.tileLayer('/tiles/{z}/{x}/{y}.png', {
+        attribution: '本地地图数据',
+        maxZoom: 18  // 与下载的瓦片最大层级一致
+    }).addTo(map);
   } catch (error) {
     console.error("地图初始化失败:", error);
     alert("无法初始化地图，请检查网络或代码");
   }
+  
 
   let historyVisible = false;
   let historyLayers = [];
@@ -92,7 +131,13 @@
       historyLayers.forEach(layer => map.removeLayer(layer));
       historyLayers = [];
     } else {
-      fetch("http://localhost:5000/get_history")
+      fetch('http://localhost:5000/get_history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expId: expId }),
+        credentials: 'include'
+      })
+      // fetch("http://localhost:5000/get_history")
         .then(res => {
           if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
           return res.json();
@@ -129,7 +174,7 @@
           if (allBounds.length > 0) {
             map.fitBounds(L.latLngBounds(allBounds));
           } else {
-            showError("currentError", "没有可显示的历史轨迹");
+            // showError("currentError", "没有可显示的历史轨迹");
           }
         })
         .catch(error => {
@@ -349,7 +394,10 @@
     fetch("http://localhost:5000/complete_trajectory", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trajectory: idList })
+      body: JSON.stringify({ 
+        trajectory: idList,
+        expId: expId
+      })
     })
       .then(res => {
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
@@ -544,31 +592,60 @@
 
     moveMarker();
   }
-
   function saveTrajectory() {
-    if (!currentIds || currentIds.length === 0) {
-      showError("currentError", "请先提交或补全轨迹");
-      return;
-    }
-
-    fetch("http://localhost:5000/save_trajectory", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trajectory: currentIds })
+    fetch("http://localhost:5000/export_experiment", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ 
+          exp_id: expId 
+        }),
+        credentials: 'include'
     })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-        return res.json();
-      })
-      .then(data => {
-        console.log("保存轨迹成功:", data);
-        showError("currentError", "轨迹保存成功");
-      })
-      .catch(error => {
+    .then(res => res.json())
+    .then(data => {
+        if (!data.success) {
+            throw new Error(data.error || '导出失败');
+        }
+        
+        // 创建并下载文件
+        const blob = new Blob([data.content], { type: 'text/plain' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = data.filename;
+        link.click();
+        URL.revokeObjectURL(link.href);
+        
+        showError("currentError", "导出成功");
+    })
+    .catch(error => {
         console.error("保存轨迹失败:", error);
-        showError("currentError", "保存轨迹失败，请检查服务器");
-      });
+        showError("currentError", error.message || "保存轨迹失败");
+    });
   }
+  // function saveTrajectory() {
+  //   if (!currentIds || currentIds.length === 0) {
+  //     showError("currentError", "请先提交或补全轨迹");
+  //     return;
+  //   }
+
+  //   fetch("http://localhost:5000/save_trajectory", {
+  //     method: "POST",
+  //     headers: { "Content-Type": "application/json" },
+  //     body: JSON.stringify({ trajectory: currentIds })
+  //   })
+  //     .then(res => {
+  //       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+  //       return res.json();
+  //     })
+  //     .then(data => {
+  //       console.log("保存轨迹成功:", data);
+  //       showError("currentError", "轨迹保存成功");
+  //     })
+  //     .catch(error => {
+  //       console.error("保存轨迹失败:", error);
+  //       showError("currentError", "保存轨迹失败，请检查服务器");
+  //     });
+  // }
 </script>
 </body>
 </html>

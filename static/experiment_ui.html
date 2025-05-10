@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>实验平台 - 轨迹恢复可视化平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 h-screen overflow-hidden">
+  <div id="experiment-ui-page" class="h-full">
+    <div class="bg-blue-600 text-white p-4 flex justify-between items-center">
+      <h1 class="text-xl font-bold">轨迹恢复可视化平台</h1>
+      <div>
+        <span id="user-info" class="mr-4"></span>
+        <button onclick="deleteUser()" class="bg-red-500 px-4 py-2 rounded hover:bg-red-600 mr-2">删除账户</button>
+        <button onclick="logout()" class="bg-red-500 px-4 py-2 rounded hover:bg-red-600">登出</button>
+      </div>
+    </div>
+    <div class="flex h-[calc(100%-64px)]">
+      <div class="w-64 bg-gray-800 text-white p-4">
+        <h2 class="text-lg font-bold mb-4">菜单</h2>
+        <button onclick="showCreateExperiment()" class="w-full text-left p-2 hover:bg-gray-700 rounded">创建实验</button>
+        <button onclick="showExperimentList()" class="w-full text-left p-2 hover:bg-gray-700 rounded">实验列表</button>
+      </div>
+      <div id="main-content" class="flex-1 p-4 overflow-auto">
+        <div id="create-experiment-page">
+          <h2 class="text-2xl font-bold mb-4">创建实验</h2>
+          <div class="mb-4">
+            <label class="block text-gray-700">实验名称</label>
+            <input id="experiment-name" type="text" class="w-full p-2 border rounded" placeholder="请输入实验名称">
+          </div>
+          <div class="mb-4">
+            <label class="block text-gray-700">上传历史轨迹 (CSV)</label>
+            <input id="history-trajectory-file" type="file" accept=".csv" class="w-full p-2 border rounded">
+          </div>
+          <button onclick="createExperiment()" class="bg-blue-500 text-white p-2 rounded hover:bg-blue-600">创建</button>
+          <p id="create-error" class="text-red-500 text-sm mt-2"></p>
+        </div>
+        <div id="experiment-list-page" class="hidden">
+          <h2 class="text-2xl font-bold mb-4">实验列表</h2>
+          <div id="experiment-list" class="space-y-4"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let isChecking = false;
+
+    async function checkLogin() {
+      if (isChecking) return true;
+      isChecking = true;
+
+      try {
+        const res = await fetch('http://localhost:5000/check_login', {
+          credentials: 'include'
+        });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('user-info').textContent = `欢迎, ${data.username}`;
+          return true;
+        } else {
+          window.location.href = 'login.html';
+          return false;
+        }
+      } catch (error) {
+        console.error('检查登录状态失败:', error);
+        window.location.href = 'login.html';
+        return false;
+      } finally {
+        isChecking = false;
+      }
+    }
+
+    function logout() {
+      fetch('http://localhost:5000/logout', {
+        method: 'POST',
+        credentials: 'include'
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            window.location.href = 'login';
+          }
+        })
+        .catch(error => {
+          console.error('登出失败:', error);
+          window.location.href = 'login';
+        });
+    }
+
+    function deleteUser() {
+      if (!confirm('确定要删除账户吗？此操作不可恢复！')) return;
+      fetch('http://localhost:5000/delete_user', {
+        method: 'POST',
+        credentials: 'include'
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('账户已删除');
+            window.location.href = 'login.html';
+          } else {
+            alert('删除账户失败: ' + data.message);
+          }
+        })
+        .catch(error => {
+          console.error('删除账户失败:', error);
+          alert('删除账户失败，请检查服务器');
+        });
+    }
+
+    function showCreateExperiment() {
+      document.querySelectorAll('#create-experiment-page, #experiment-list-page').forEach(page => page.classList.add('hidden'));
+      document.getElementById('create-experiment-page').classList.remove('hidden');
+    }
+
+    function showExperimentList() {
+      document.querySelectorAll('#create-experiment-page, #experiment-list-page').forEach(page => page.classList.add('hidden'));
+      document.getElementById('experiment-list-page').classList.remove('hidden');
+      renderExperimentList();
+    }
+
+    function createExperiment() {
+      const name = document.getElementById('experiment-name').value.trim();
+      const fileInput = document.getElementById('history-trajectory-file');
+      const file = fileInput.files[0];
+
+      if (!name) {
+        document.getElementById('create-error').textContent = '实验名称不能为空';
+        return;
+      }
+      if (!file) {
+        document.getElementById('create-error').textContent = '请上传历史轨迹文件';
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const text = e.target.result;
+        const rows = text.split('\n').map(row => row.trim()).filter(row => row);
+        if (rows.length === 0) {
+          document.getElementById('create-error').textContent = 'CSV 文件至少需要包含一行数据';
+          return;
+        }
+        const historyTrajectory = [];
+        for (const row of rows) {
+          const values = row.split(',').map(val => val.trim());
+          if (values.length !== 96) {
+            document.getElementById('create-error').textContent = '每行必须包含 96 个数字（48 个经纬度点）';
+            return;
+          }
+          const trajectory = [];
+          for (let i = 0; i < values.length; i += 2) {
+            const lat = parseFloat(values[i]);
+            const lng = parseFloat(values[i + 1]);
+            if (isNaN(lat) || isNaN(lng)) {
+              document.getElementById('create-error').textContent = 'CSV 文件包含无效数字';
+              return;
+            }
+            trajectory.push([lat, lng]);
+          }
+          historyTrajectory.push(trajectory);
+        }
+
+        fetch('http://localhost:5000/create_experiment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, historyTrajectory }),
+          credentials: 'include'
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              document.getElementById('experiment-name').value = '';
+              fileInput.value = '';
+              document.getElementById('create-error').textContent = '实验创建成功';
+              setTimeout(() => document.getElementById('create-error').textContent = '', 3000);
+              renderExperimentList();
+            } else {
+              document.getElementById('create-error').textContent = data.message;
+            }
+          })
+          .catch(error => {
+            console.error('创建实验失败:', error);
+            document.getElementById('create-error').textContent = '创建实验失败，请检查服务器';
+          });
+      };
+      reader.readAsText(file);
+    }
+
+    function renderExperimentList() {
+      fetch('http://localhost:5000/get_experiments', {
+        credentials: 'include'
+      })
+        .then(res => res.json())
+        .then(data => {
+        console.log(data.success)
+          if (data.success) {
+            const experiments = data.experiments;
+            const list = document.getElementById('experiment-list');
+            list.innerHTML = '';
+            experiments.forEach(exp => {
+              const div = document.createElement('div');
+              div.className = 'bg-white p-4 rounded-lg shadow flex justify-between items-center';
+              div.innerHTML = `
+                <div>
+                  <h3 class="text-lg font-bold">${exp.name}</h3>
+                  <p>历史轨迹: ${exp.historyTrajectory.length} 条，每条 ${exp.historyTrajectory[0].length} 个点</p>
+                  <p>当前轨迹: ${exp.currentTrajectory ? exp.currentTrajectory.length + ' 个点' : '未设置'}</p>
+                  <p>预测轨迹: ${exp.predictedTrajectory ? exp.predictedTrajectory.length + ' 个点' : '未预测'}</p>
+                </div>
+                <div>
+                  <button onclick="goToTrajectoryRecovery('${exp.id}')" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">去预测</button>
+                  <button onclick="exportExperiment(${exp.id})" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">导出</button>
+                  <button onclick="deleteExperiment('${exp.id}')" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">删除</button>
+                </div>
+              `;
+              list.appendChild(div);
+            });
+          } 
+          else {
+            console.log("here")
+            window.location.href = 'login';
+          }
+        })
+        // .catch(error => {
+        //   console.error('获取实验列表失败:', error);
+        //   window.location.href = 'login.html';
+        // });
+    }
+
+    function deleteExperiment(experimentId) {
+      if (!confirm('确定要删除此实验吗？')) return;
+      fetch('http://localhost:5000/delete_experiment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expId: experimentId }),
+        credentials: 'include'
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('实验已删除');
+            renderExperimentList();
+          } else {
+            alert('删除实验失败: ' + data.message);
+          }
+        })
+        .catch(error => {
+          console.error('删除实验失败:', error);
+          alert('删除实验失败，请检查服务器');
+        });
+    }
+
+    function goToTrajectoryRecovery(experimentId) {
+      window.location.href = `trajectory?expId=${experimentId}`;
+    }
+    function exportExperiment(expId) {
+      fetch(`http://localhost:5000/export_experiment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exp_id: expId }),
+        credentials: 'include'
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          // 创建并下载文件
+          const blob = new Blob([data.content], { type: 'text/plain' });
+          const link = document.createElement('a');
+          link.href = URL.createObjectURL(blob);
+          link.download = data.filename;
+          link.click();
+          URL.revokeObjectURL(link.href);
+        } else {
+          alert(data.error || '导出失败');
+        }
+      })
+      .catch(error => {
+        console.error('导出失败:', error);
+        alert('导出请求失败，请检查网络');
+      });
+    }
+    // 初始化
+    checkLogin().then(isLoggedIn => {
+      if (isLoggedIn) {
+        showCreateExperiment();
+      }
+    });
+  </script>
+</body>
+</html>
