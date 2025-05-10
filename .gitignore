@@ -9,11 +9,11 @@ generate
 generate_copy
 generate_copy_coord
 generate_linear
-history.csv
-history_trajectories.csv
 
 final_user_augmented
 final_user_augmented_coord
+final_user_augmented_strength
+final_user_augmented_strength_coord
 
 final_user_augmented_coord.zip
 final_user_augmented.zip

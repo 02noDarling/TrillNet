@@ -1,8 +1,8 @@
 import os
 import csv
 import random
-input_dir = "/Users/hudaili/Desktop/VsCodeProjects/TrillNet/final_user_augmented"
-save_dir = "/Users/hudaili/Desktop/VsCodeProjects/TrillNet/final_user_augmented_coord"
+input_dir = r"D:\VsCodeProjects\TrillNet\final_user_augmented_strength"
+save_dir = r"D:\VsCodeProjects\TrillNet\final_user_augmented_strength_coord"
 os.makedirs(save_dir, exist_ok=True)
 
 
