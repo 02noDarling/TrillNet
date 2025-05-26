@@ -4,6 +4,7 @@ trillnet_weights.pth
 trillnet_weights_old.pth
 trillnet_weights_trill_linear.pth
 trillnet_weights_trill_old_gpu.pth
+weight
 data
 generate
 generate_copy

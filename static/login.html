@@ -1,78 +1,423 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - 轨迹恢复可视化平台</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .form-container {
+            transition: all 0.3s ease-in-out;
+        }
+        .slide-left {
+            transform: translateX(-100%);
+            opacity: 0;
+        }
+        .slide-right {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        .slide-center {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    </style>
 </head>
-<body class="bg-gray-100 h-screen flex items-center justify-center">
-    <!-- <div class="container">
-        <h2>轨迹恢复平台</h2>
-        <div id="login">
-            <input type="text" id="username" placeholder="用户名">
-            <input type="password" id="password" placeholder="密码">
-            <button onclick="login()">登录</button>
-            <button onclick="register()">注册</button>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md min-h-[550px] overflow-hidden relative">
+        <!-- 登录界面 -->
+        <div id="login-form" class="form-container slide-center p-8">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">欢迎回来</h1>
+                <p class="text-gray-600">轨迹恢复可视化平台</p>
+            </div>
+            
+            <form id="loginForm" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">用户名</label>
+                    <input id="login-username" type="text" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入用户名">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">密码</label>
+                    <input id="login-password" type="password" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入密码">
+                </div>
+                
+                <div class="flex items-center justify-between">
+                    <label class="flex items-center">
+                        <input id="remember-me" type="checkbox" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                        <span class="ml-2 text-sm text-gray-600">记住我</span>
+                    </label>
+                    <button type="button" onclick="showForgotPassword()" class="text-sm text-blue-600 hover:text-blue-800 transition-colors">
+                        忘记密码？
+                    </button>
+                </div>
+                
+                <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                    登录
+                </button>
+                <div class="text-center mt-4">
+                    <span class="text-gray-600">还没有账户？</span>
+                    <button type="button" onclick="showRegister()" class="text-blue-600 hover:text-blue-800 transition-colors font-medium ml-1">
+                        立即注册
+                    </button>
+                </div>
+            </form>
+            
+            <div id="login-error" class="text-red-500 text-sm mt-4 text-center hidden"></div>
         </div>
-        <div id="error" style="color:red;"></div>
-    </div> -->
-    <div class="bg-white p-6 rounded-lg shadow-lg w-96">
-        <h1 class="text-2xl font-bold mb-4 text-center">登录</h1>
-        <div class="mb-4">
-            <label class="block text-gray-700">用户名</label>
-            <input id="username" type="text" class="w-full p-2 border rounded" placeholder="请输入用户名">
+
+        <!-- 注册界面 -->
+        <div id="register-form" class="form-container slide-right absolute top-0 left-0 w-full p-6 bg-white min-h-full">
+            <div class="text-center mb-6">
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">创建账户</h1>
+                <p class="text-gray-600">加入轨迹恢复可视化平台</p>
+            </div>
+            
+            <form id="registerForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                    <input id="register-username" type="text" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入用户名">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
+                    <input id="register-email" type="email" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入邮箱地址">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                    <input id="register-password" type="password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入密码">
+                    <div class="mt-1 text-xs text-gray-500">密码至少6位，包含字母和数字</div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">确认密码</label>
+                    <input id="register-confirm-password" type="password" required
+                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请再次输入密码">
+                </div>
+                
+                <button type="submit" class="w-full bg-green-600 text-white py-2.5 rounded-lg hover:bg-green-700 transition-colors font-medium">
+                    注册
+                </button>
+                
+                <div class="text-center">
+                    <span class="text-gray-600">已有账户？</span>
+                    <button type="button" onclick="showLogin()" class="text-blue-600 hover:text-blue-800 transition-colors font-medium ml-1">
+                        立即登录
+                    </button>
+                </div>
+            </form>
+            
+            <div id="register-error" class="text-red-500 text-sm mt-4 text-center hidden"></div>
         </div>
-        <div class="mb-4">
-            <label class="block text-gray-700">密码</label>
-            <input id="password" type="password" class="w-full p-2 border rounded" placeholder="请输入密码">
+
+        <!-- 忘记密码界面 -->
+        <div id="forgot-form" class="form-container slide-right absolute top-0 left-0 w-full p-8 bg-white">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">重置密码</h1>
+                <p class="text-gray-600">找回您的账户</p>
+            </div>
+            
+            <!-- 第一步：输入用户名 -->
+            <div id="forgot-step1" class="space-y-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">用户名</label>
+                    <input id="forgot-username" type="text" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入用户名">
+                </div>
+                
+                <button type="button" onclick="sendVerificationCode()" class="w-full bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700 transition-colors font-medium">
+                    发送验证码
+                </button>
+            </div>
+
+            <!-- 第二步：输入验证码和新密码 -->
+            <div id="forgot-step2" class="space-y-6 hidden">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">验证码</label>
+                    <input id="verification-code" type="text" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入邮箱收到的验证码">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">新密码</label>
+                    <input id="new-password" type="password" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请输入新密码">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">确认新密码</label>
+                    <input id="confirm-new-password" type="password" required
+                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                           placeholder="请再次输入新密码">
+                </div>
+                
+                <button type="button" onclick="resetPassword()" class="w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 transition-colors font-medium">
+                    重置密码
+                </button>
+            </div>
+            
+            <div class="text-center mt-6">
+                <button type="button" onclick="showLogin()" class="text-blue-600 hover:text-blue-800 transition-colors font-medium">
+                    返回登录
+                </button>
+            </div>
+            
+            <div id="forgot-error" class="text-red-500 text-sm mt-4 text-center hidden"></div>
+            <div id="forgot-success" class="text-green-500 text-sm mt-4 text-center hidden"></div>
         </div>
-        <div class="flex space-x-2"> <!-- 添加flex容器和间距 -->
-            <button onclick="login()" class="flex-1 bg-blue-500 text-white p-2 rounded hover:bg-blue-600">登录</button>
-            <button onclick="register()" class="flex-1 bg-gray-500 text-white p-2 rounded hover:bg-gray-600">注册</button>
-        </div>
-        <p id="login-error" class="text-red-500 text-sm mt-2 text-center"></p>
     </div>
-    
 
     <script>
+        // 页面加载时检查是否有记住的用户信息
+        window.onload = function() {
+            const rememberedUser = localStorage.getItem('rememberedUser');
+            if (rememberedUser) {
+                const userData = JSON.parse(rememberedUser);
+                document.getElementById('login-username').value = userData.username;
+                document.getElementById('login-password').value = userData.password;
+                document.getElementById('remember-me').checked = true;
+            }
+        };
+
+        // 界面切换函数
+        function showLogin() {
+            hideAllForms();
+            setTimeout(() => {
+                document.getElementById('login-form').classList.add('slide-center');
+                document.getElementById('login-form').classList.remove('slide-left', 'slide-right');
+            }, 150);
+        }
+
+        function showRegister() {
+            hideAllForms();
+            setTimeout(() => {
+                document.getElementById('register-form').classList.add('slide-center');
+                document.getElementById('register-form').classList.remove('slide-left', 'slide-right');
+            }, 150);
+        }
+
+        function showForgotPassword() {
+            hideAllForms();
+            setTimeout(() => {
+                document.getElementById('forgot-form').classList.add('slide-center');
+                document.getElementById('forgot-form').classList.remove('slide-left', 'slide-right');
+                // 重置忘记密码表单状态
+                document.getElementById('forgot-step1').classList.remove('hidden');
+                document.getElementById('forgot-step2').classList.add('hidden');
+            }, 150);
+        }
+
+        function hideAllForms() {
+            const forms = ['login-form', 'register-form', 'forgot-form'];
+            forms.forEach(formId => {
+                const form = document.getElementById(formId);
+                form.classList.remove('slide-center');
+                form.classList.add('slide-left');
+            });
+        }
+
+        // 登录表单处理
+        document.getElementById('loginForm').onsubmit = function(e) {
+            e.preventDefault();
+            login();
+        };
+
         function login() {
-            const username = document.getElementById('username').value
-            const password = document.getElementById('password').value
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const rememberMe = document.getElementById('remember-me').checked;
+            
+            if (!username || !password) {
+                showError('login-error', '请填写用户名和密码');
+                return;
+            }
+
             fetch('/login', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({username, password}),
                 credentials: 'include'
-            }).then(res => res.json()).then(data => {
-                console.log("YYY")
-                if (data.success) window.location.href = 'experiment_ui'
-                else {
-                    // showError(data.error || '登录失败')
-                    alert("登录失败")
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    // 处理记住密码功能
+                    if (rememberMe) {
+                        localStorage.setItem('rememberedUser', JSON.stringify({username, password}));
+                    } else {
+                        localStorage.removeItem('rememberedUser');
+                    }
+                    window.location.href = 'experiment_ui';
+                } else {
+                    showError('login-error', data.message || '登录失败');
                 }
             })
+            .catch(error => {
+                console.error('Login error:', error);
+                showError('login-error', '网络错误，请重试');
+            });
         }
 
+        // 注册表单处理
+        document.getElementById('registerForm').onsubmit = function(e) {
+            e.preventDefault();
+            register();
+        };
+
         function register() {
-            const username = document.getElementById('username').value
-            const password = document.getElementById('password').value
+            const username = document.getElementById('register-username').value;
+            const email = document.getElementById('register-email').value;
+            const password = document.getElementById('register-password').value;
+            const confirmPassword = document.getElementById('register-confirm-password').value;
+            
+            // 验证输入
+            if (!username || !email || !password || !confirmPassword) {
+                showError('register-error', '请填写所有字段');
+                alert("请填写所有字段")
+                return;
+            }
+            
+            if (password !== confirmPassword) {
+                showError('register-error', '两次输入的密码不一致');
+                alert('两次输入的密码不一致')
+                return;
+            }
+            
+            if (password.length < 6) {
+                showError('register-error', '密码长度至少6位');
+                alert('密码长度至少6位')
+                return;
+            }
+            
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                showError('register-error', '请输入有效的邮箱地址');
+                alert('请输入有效的邮箱地址')
+                return;
+            }
+
             fetch('/register', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username, password}),
+                body: JSON.stringify({username, email, password}),
                 credentials: 'include'
-            }).then(res => res.json()).then(data => {
-                if (data.success) alert('注册成功')
-                else {
-                    // showError(data.error || '注册失败')
-                    alert("注册失败")
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccess('register-error', '注册成功！请登录');
+                    setTimeout(() => showLogin(), 2000);
+                } else {
+                    showError('register-error', data.error || '注册失败');
+                    alert(data.error)
                 }
             })
+            .catch(error => {
+                console.error('Register error:', error);
+                showError('register-error', '网络错误，请重试');
+            });
         }
 
-        function showError(msg) {
-            document.getElementById('error').innerText = msg
+        // 发送验证码
+        function sendVerificationCode() {
+            const username = document.getElementById('forgot-username').value;
+            
+            if (!username) {
+                showError('forgot-error', '请输入用户名');
+                return;
+            }
+
+            fetch('/send-verification-code', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccess('forgot-success', '验证码已发送到您的邮箱');
+                    document.getElementById('forgot-step1').classList.add('hidden');
+                    document.getElementById('forgot-step2').classList.remove('hidden');
+                } else {
+                    showError('forgot-error', data.error || '发送验证码失败');
+                }
+            })
+            .catch(error => {
+                console.error('Send verification error:', error);
+                showError('forgot-error', '网络错误，请重试');
+            });
+        }
+
+        // 重置密码
+        function resetPassword() {
+            const username = document.getElementById('forgot-username').value;
+            const verificationCode = document.getElementById('verification-code').value;
+            const newPassword = document.getElementById('new-password').value;
+            const confirmNewPassword = document.getElementById('confirm-new-password').value;
+            
+            if (!verificationCode || !newPassword || !confirmNewPassword) {
+                showError('forgot-error', '请填写所有字段');
+                return;
+            }
+            
+            if (newPassword !== confirmNewPassword) {
+                showError('forgot-error', '两次输入的密码不一致');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                showError('forgot-error', '密码长度至少6位');
+                return;
+            }
+
+            fetch('/reset-password', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, verificationCode, newPassword})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    showSuccess('forgot-success', '密码重置成功！正在跳转到登录页面...');
+                    setTimeout(() => showLogin(), 2000);
+                } else {
+                    showError('forgot-error', data.error || '密码重置失败');
+                }
+            })
+            .catch(error => {
+                console.error('Reset password error:', error);
+                showError('forgot-error', '网络错误，请重试');
+            });
+        }
+
+        // 错误和成功消息显示函数
+        function showError(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.classList.remove('hidden', 'text-green-500');
+            element.classList.add('text-red-500');
+        }
+
+        function showSuccess(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.classList.remove('hidden', 'text-red-500');
+            element.classList.add('text-green-500');
         }
     </script>
 </body>

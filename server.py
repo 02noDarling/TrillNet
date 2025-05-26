@@ -9,10 +9,27 @@ import random
 import sqlite3
 import json
 from flask import send_from_directory
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import hashlib
+import secrets
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = '3d3f8b3e9e7f4c2a1b0d8e7f6a5c4b3a'  # 必须设置密钥
 CORS(app, supports_credentials=True, origins=["http://localhost:5000/"])
+
+# 邮件配置 - 请根据你的邮件服务商配置
+EMAIL_CONFIG = {
+    'smtp_server': 'smtp.qq.com',  # 根据邮件服务商修改
+    'smtp_port': 587,
+    'email': '3443902104@qq.com',  # 你的邮箱
+    'password': 'yqwjxeukzvrpdbfh'   # 你的邮箱应用密码
+}
+
+# 临时存储验证码的字典 (生产环境建议使用Redis)
+verification_codes = {}
 
 # 数据库初始化
 def init_db():
@@ -22,6 +39,7 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   username TEXT UNIQUE NOT NULL,
+                  email TEXT UNIQUE NOT NULL,
                   password TEXT NOT NULL)''')
     # 创建实验表
     c.execute('''CREATE TABLE IF NOT EXISTS experiments
@@ -34,6 +52,37 @@ def init_db():
                   FOREIGN KEY (user_id) REFERENCES users(id))''')
     conn.commit()
     conn.close()
+
+def hash_password(password):
+    """对密码进行哈希处理"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def send_email(to_email, subject, body):
+    """发送邮件"""
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_CONFIG['email']
+        msg['To'] = to_email
+        msg['Subject'] = subject
+        
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+        
+        server = smtplib.SMTP(EMAIL_CONFIG['smtp_server'], EMAIL_CONFIG['smtp_port'])
+        server.starttls()
+        server.login(EMAIL_CONFIG['email'], EMAIL_CONFIG['password'])
+        
+        text = msg.as_string()
+        server.sendmail(EMAIL_CONFIG['email'], to_email, text)
+        server.quit()
+        
+        return True
+    except Exception as e:
+        print(f"发送邮件失败: {e}")
+        return False
+
+def generate_verification_code():
+    """生成6位数字验证码"""
+    return str(random.randint(100000, 999999))
 
 init_db()
 
@@ -50,39 +99,204 @@ def serve_trajectory():
     return send_from_directory('static', 'trajectory.html')
 
 # 用户认证相关
+
+# @app.route('/register', methods=['POST'])
+# def register():
+#     data = request.json
+#     username = data.get('username')
+#     password = data.get('password')  # 实际应哈希存储
+#     try:
+#         conn = sqlite3.connect('data.db')
+#         c = conn.cursor()
+#         c.execute("INSERT INTO users (username, password) VALUES (?, ?)", 
+#                  (username, password))
+#         conn.commit()
+#         return jsonify({'success': True})
+#     except sqlite3.IntegrityError:
+#         return jsonify({'error': '用户名已存在'}), 400
+
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
     username = data.get('username')
-    password = data.get('password')  # 实际应哈希存储
+    email = data.get('email')
+    password = data.get('password')
+
+    print(username, email, password)
+    
+    if not username or not email or not password:
+        return jsonify({'error': '用户名、邮箱和密码不能为空'}), 400
+    
+    # 验证邮箱格式
+    import re
+    if not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+        return jsonify({'error': '邮箱格式不正确'}), 400
+    
+    # 哈希密码
+    hashed_password = hash_password(password)
+    
     try:
         conn = sqlite3.connect('data.db')
         c = conn.cursor()
-        c.execute("INSERT INTO users (username, password) VALUES (?, ?)", 
-                 (username, password))
+        c.execute("INSERT INTO users (username, email, password) VALUES (?, ?, ?)", 
+                 (username, email, hashed_password))
         conn.commit()
+        conn.close()
+        print("YYYYYYYYYYY")
         return jsonify({'success': True})
-    except sqlite3.IntegrityError:
-        return jsonify({'error': '用户名已存在'}), 400
+    except sqlite3.IntegrityError as e:
+        if 'username' in str(e):
+            return jsonify({'error': '用户名已存在'}), 400
+        elif 'email' in str(e):
+            return jsonify({'error': '邮箱已被注册'}), 400
+        else:
+            return jsonify({'error': '注册失败'}), 400
+
+# @app.route('/login', methods=['POST'])
+# def login():
+#     data = request.json
+#     username = data.get('username')
+#     password = data.get('password')
+#     conn = sqlite3.connect('data.db')
+#     c = conn.cursor()
+#     c.execute("SELECT id FROM users WHERE username=? AND password=?", 
+#              (username, password))
+#     user = c.fetchone()
+#     if user:
+#         print("here")
+#         print(user[0])
+#         session['user_id'] = user[0]
+#         session['username'] = username
+#         print(session)
+#         return jsonify({'success': True, 'message': '登录成功'})
+#     return jsonify({'success': False, 'message': '用户名或密码错误'})
 
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
     username = data.get('username')
     password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({'success': False, 'message': '用户名和密码不能为空'})
+    
+    hashed_password = hash_password(password)
+    
     conn = sqlite3.connect('data.db')
     c = conn.cursor()
-    c.execute("SELECT id FROM users WHERE username=? AND password=?", 
-             (username, password))
+    c.execute("SELECT id, email FROM users WHERE username=? AND password=?", 
+             (username, hashed_password))
     user = c.fetchone()
+    conn.close()
+    
     if user:
-        print("here")
-        print(user[0])
         session['user_id'] = user[0]
         session['username'] = username
-        print(session)
+        session['email'] = user[1]
         return jsonify({'success': True, 'message': '登录成功'})
+    
     return jsonify({'success': False, 'message': '用户名或密码错误'})
+
+@app.route('/send-verification-code', methods=['POST'])
+def send_verification_code():
+    data = request.json
+    username = data.get('username')
+    
+    if not username:
+        return jsonify({'error': '用户名不能为空'}), 400
+    
+    # 查找用户邮箱
+    conn = sqlite3.connect('data.db')
+    c = conn.cursor()
+    c.execute("SELECT email FROM users WHERE username=?", (username,))
+    user = c.fetchone()
+    conn.close()
+    
+    if not user:
+        return jsonify({'error': '用户不存在'}), 404
+    
+    email = user[0]
+
+    # # 测试
+    # return jsonify({'success': True, 'message': '验证码已发送'})
+    
+    # 生成验证码
+    code = generate_verification_code()
+    
+    # 存储验证码 (设置5分钟过期)
+    verification_codes[username] = {
+        'code': code,
+        'expire_time': datetime.now() + timedelta(minutes=5)
+    }
+    
+    # 发送邮件
+    subject = "密码重置验证码 - 轨迹恢复可视化平台"
+    body = f"""
+您好！
+
+您正在重置轨迹恢复可视化平台的密码。
+
+验证码：{code}
+
+此验证码将在5分钟后过期，请及时使用。
+
+如果这不是您的操作，请忽略此邮件。
+
+轨迹恢复可视化平台
+    """
+    
+    if send_email(email, subject, body):
+        return jsonify({'success': True, 'message': '验证码已发送'})
+    else:
+        return jsonify({'error': '发送验证码失败，请稍后重试'}), 500
+
+@app.route('/reset-password', methods=['POST'])
+def reset_password():
+    data = request.json
+    username = data.get('username')
+    verification_code = data.get('verificationCode')
+    new_password = data.get('newPassword')
+    
+    if not username or not verification_code or not new_password:
+        return jsonify({'error': '所有字段都不能为空'}), 400
+    
+    # 验证验证码
+    if username not in verification_codes:
+        return jsonify({'error': '验证码不存在或已过期'}), 400
+    
+    stored_data = verification_codes[username]
+    
+    # 检查过期时间
+    if datetime.now() > stored_data['expire_time']:
+        del verification_codes[username]
+        return jsonify({'error': '验证码已过期'}), 400
+    
+    # 检查验证码
+    if verification_code != stored_data['code']:
+        return jsonify({'error': '验证码错误'}), 400
+    
+    # 更新密码
+    hashed_password = hash_password(new_password)
+    
+    try:
+        conn = sqlite3.connect('data.db')
+        c = conn.cursor()
+        c.execute("UPDATE users SET password=? WHERE username=?", 
+                 (hashed_password, username))
+        
+        if c.rowcount == 0:
+            return jsonify({'error': '用户不存在'}), 404
+        
+        conn.commit()
+        conn.close()
+        
+        # 删除已使用的验证码
+        del verification_codes[username]
+        
+        return jsonify({'success': True, 'message': '密码重置成功'})
+    
+    except Exception as e:
+        return jsonify({'error': '密码重置失败'}), 500
 
 @app.route('/check_login', methods=['GET'])
 def check_login():
@@ -94,6 +308,8 @@ def check_login():
 @app.route('/logout')
 def logout():
     session.pop('user_id', None)
+    session.pop('username', None)
+    session.pop('email', None)
     return jsonify({'success': True})
 
 # # 实验管理相关
@@ -433,15 +649,17 @@ def get_history_from_database(expId):
 
 def infer(current_trajectory, expId):
     net = TrillNet(dim=EMBED_DIM, num_heads=NHEAD, window_size=WINDOW_SIZE, candidate_size=CANDIDATE_SIZE)
-    if os.path.exists("trillnet_weights.pth"):
-        checkpoints = torch.load("trillnet_weights.pth", map_location=DEVICE)
+    weights_path = "weight/hdlnet_weights.pth"
+    print(f"权重路径:{weights_path}!!!")
+    if os.path.exists(weights_path):
+        checkpoints = torch.load(weights_path, map_location=DEVICE)
         net.load_state_dict(checkpoints)
         print("已经成功加载权重了!!!")
     net = net.to(DEVICE)
 
     # history = get_history_from_csv()
     history = get_history_from_database(expId)
-    print(history[0])
+    # print(history[0])
     for i in range(len(history)):
         history[i] = trajectory_to_standard(history[i])
     
@@ -455,9 +673,9 @@ def infer(current_trajectory, expId):
             writer.writerow(history_trajectory)
 
 
-    print("历史轨迹如下")
-    for history_trajectory in history:
-        print(history_trajectory)
+    # print("历史轨迹如下")
+    # for history_trajectory in history:
+    #     print(history_trajectory)
     
 
 
@@ -493,9 +711,9 @@ def complete_trajectory():
               (str(trajectory), expId))
     conn.commit()
 
-    print("现有轨迹")
-    print(trajectory)
     current_trajectory = trajectory_to_standard(trajectory)
+    print("现有轨迹")
+    print(current_trajectory)
     complete_current_trajectory = infer(current_trajectory, expId)
 
     completed_points = []
